@@ -5,9 +5,8 @@ This is a configuration for Windows. It does not include some of the featurese p
 
 ### When Setting your own Windows emacs configuration:
 - Add $HOME environment variable path to “C:\Users\username" *(Recommended*)
-	- Otherwise, you would find your emacs home directory set to "C:\Users\username\AppData\Roaming" 
-- Always run emacs with emacsclient
-	- Have your emacs daemon running
+	- Otherwise, you would find your emacs home directory set to rather arbitrary location ("C:\Users\username\AppData\Roaming")
+- Always have your emacs daemon running and launch emacs with emacsclient
 
 ### Images:
 ![screenshot](https://github.com/Oakmura/Emacs-Configuration/assets/89961585/10f96072-0eeb-4d3b-af90-9c80c9a62b2a)
