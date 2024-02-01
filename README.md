@@ -10,3 +10,4 @@ This is a configuration for Windows. It does not include some of the featurese p
 	- Have your emacs daemon running
 
 **Images**:
+![screenshot](https://github.com/Oakmura/Emacs-Configuration/assets/89961585/10f96072-0eeb-4d3b-af90-9c80c9a62b2a)
