@@ -82,6 +82,7 @@ This allows for output to be passed back to the parent Emacs process."
   (let* ((program (if (string-match-p "/" program) (expand-file-name program) program))
          (subprocess
           `(with-temp-buffer
+             (when (< emacs-major-version 28) (require 'subr-x)) ;;@COMPAT: Emacs 27
              (setq load-prefer-newer t)
              (let ((p (make-process
                        :name   ,(concat "elpaca-process-poll-" program)
@@ -127,9 +128,16 @@ Anaphoric bindings provided:
      (ignore result exit invoked success failure stdout stderr)
      ,@body))
 
+(defmacro elpaca--with-no-git-config (&rest body)
+  "Eval BODY with user Git config ignored."
+  `(let ((process-environment (append '("GIT_CONFIG_SYSTEM=/dev/null"
+                                        "GIT_CONFIG_GLOBAL=/dev/null")
+                                      process-environment)))
+     ,@body))
+
 (defmacro elpaca-with-process-call (args &rest body)
   "Execute BODY in `elpaca-with-process', applying `elpaca-process-call' to ARGS."
-  (declare (indent 1) (debug t))
+  (declare (indent 1) (debug 'form))
   `(elpaca-with-process (elpaca-process-call ,@(if (listp args) args (list args))) ,@body))
 
 (defmacro elpaca-process-cond (args &rest conditions)

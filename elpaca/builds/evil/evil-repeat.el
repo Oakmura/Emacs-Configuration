@@ -141,7 +141,7 @@
   (when (evil-visual-state-p)
     (let* ((range (evil-visual-range))
            (beg (evil-range-beginning range))
-           (end (1- (evil-range-end range)))
+           (end (max 1 (1- (evil-range-end range))))
            (nfwdlines (evil-count-lines beg end)))
       (evil-repeat-record
        (cond
@@ -250,7 +250,7 @@ Return non-nil if so."
       (evil-emacs-state-p)              ; ... in Emacs state
       (and (evil-mouse-events-p         ; ... mouse events
             (this-command-keys-vector))
-           (eq repeat-type nil))
+           (null repeat-type))
       (minibufferp)))                   ; ... minibuffer activated
 
 (defun evil-repeat-record (info)

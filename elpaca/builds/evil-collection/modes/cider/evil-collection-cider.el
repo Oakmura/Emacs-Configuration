@@ -1,6 +1,6 @@
 ;;; evil-collection-cider.el --- Evil bindings for Cider -*- lexical-binding: t -*-
 
-;; Copyright (C) 2017 James Nguyen
+;; Copyright (C) 2017, 2024 James Nguyen
 
 ;; Author: James Nguyen <james@jojojames.com>
 ;; Maintainer: James Nguyen <james@jojojames.com>
@@ -30,6 +30,8 @@
 (require 'cl-lib)
 (require 'cider nil t)
 (require 'evil-collection)
+
+(defvar cider-use-xref)
 
 (declare-function cider-debug-mode-send-reply "cider-debug")
 
@@ -121,22 +123,28 @@ ex. \(cider-debug-mode-send-reply \":next\"\)"
       "q" 'evil-collection-cider-debug-quit))
 
   (evil-collection-define-key '(normal visual) 'cider-mode-map
-    "gd" 'cider-find-var
-    (kbd "C-t") 'cider-pop-back
     "gz" 'cider-switch-to-repl-buffer
     "gf" 'cider-find-resource
     "K" 'cider-doc)
+
+  (unless cider-use-xref
+    (evil-collection-define-key '(normal visual) 'cider-mode-map
+      "gd" 'cider-find-var
+      (kbd "C-t") 'cider-pop-back))
 
   (evil-collection-define-key '(normal visual) 'cider-repl-mode-map
     ;; FIXME: This seems to get overwritten by `cider-switch-to-repl-buffer'.
     "gz" 'cider-switch-to-last-clojure-buffer
     (kbd "RET") 'cider-repl-return
 
-    "gd" 'cider-find-var
-    (kbd "C-t") 'cider-pop-back
     "gr" 'cider-refresh
     "gf" 'cider-find-resource
     "K" 'cider-doc)
+
+  (unless cider-use-xref
+    (evil-collection-define-key '(normal visual) 'cider-repl-mode-map
+      "gd" 'cider-find-var
+      (kbd "C-t") 'cider-pop-back))
 
   (evil-collection-define-key '(normal visual) 'cider-repl-history-mode-map
     (kbd "C-k") 'cider-repl-history-previous
@@ -180,7 +188,7 @@ ex. \(cider-debug-mode-send-reply \":next\"\)"
     "r" 'cider-macroexpand-again
     "K" 'cider-doc ; Evil has `evil-lookup'.
     "J" 'cider-javadoc
-    "." 'cider-find-var
+    "." (if cider-use-xref 'xref-find-definitions 'cider-find-var)
     "m" 'cider-macroexpand-1-inplace
     "a" 'cider-macroexpand-all-inplace
     "u" 'cider-macroexpand-undo

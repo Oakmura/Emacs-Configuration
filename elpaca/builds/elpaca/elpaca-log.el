@@ -30,7 +30,7 @@
 (defface elpaca-log-error '((t (:inherit error))) "Highlight log errors." :group 'elpaca-ui)
 (defface elpaca-log-info '((t (:inherit shadow))) "Face for log info." :group 'elpaca-ui)
 
-(defcustom elpaca-log-default-search-query ".*" "Default query for `elpaca-log-buffer'."
+(defcustom elpaca-log-default-search-query "#unique" "Default query for `elpaca-log-buffer'."
   :type 'string :group 'elpaca-ui)
 
 (defcustom elpaca-log-search-tags
@@ -42,9 +42,11 @@
   :type '(alist :key-type symbol :value-type function) :group 'elpaca-ui)
 
 (defcustom elpaca-log-command-queries
-  '(((elpaca-fetch elpaca-fetch-all)   . "#latest #update-log")
-    ((elpaca-try elpaca-rebuild)       . "#latest #linked-errors")
-    ((elpaca-merge elpaca-merge-all) . "#unique | !finished")
+  '(((elpaca-fetch elpaca-fetch-all) . "#latest #update-log")
+    ((elpaca-try elpaca-rebuild) . "#latest #linked-errors")
+    (( elpaca-merge elpaca-merge-all elpaca-pull elpaca-pull-all
+       elpaca-update elpaca-update-all)
+     . "#latest #unique")
     ((eval-buffer eval-region eval-defun eval-last-sexp org-ctrl-c-ctrl-c) . silent)
     (elpaca-delete . (lambda () (if (equal (buffer-name) elpaca-log-buffer)
                                     elpaca-ui-search-query 'silent)))
@@ -53,6 +55,11 @@
 If query is a string it is used when logging for that command.
 If it is a function, it's return value is used."
   :type 'alist :group 'elpaca-ui)
+
+(defcustom elpaca-log-diff-function #'elpaca-log-diff
+  "Function to display a diff from the update log.
+It must accept a package ID symbol and REF string as its first two arguments."
+  :type 'function :group 'elpaca-ui)
 
 (defun elpaca-log--marked-query ()
   "Return query for marked packages."
@@ -132,25 +139,73 @@ If it is a function, it's return value is used."
          entry))
      entries)))
 
+(defvar elpaca-log--follow-line nil)
+(defun elpaca-log--follow ()
+  "Display update diff if line has changed."
+  (let ((line (line-number-at-pos)))
+    (unless (equal elpaca-log--follow-line line)
+      (setq elpaca-log--follow-line line)
+      (ignore-errors (call-interactively #'elpaca-log-view-diff)))))
+
+(define-minor-mode elpaca-log-update-mode "Auto display update diffs."
+  :lighter " elum"
+  (unless (derived-mode-p 'elpaca-log-mode) (user-error "Not in `elpaca-log-mode' buffer"))
+  (if elpaca-log-update-mode
+      (progn
+        (add-hook 'post-command-hook #'elpaca-log--follow nil t)
+        (elpaca-log--follow))
+    (remove-hook 'post-command-hook #'elpaca-log--follow t)))
+
 (declare-function magit-show-commit "magit")
-(defun elpaca-log--show-ref (data)
-  "Show ref DATA."
-  (if-let ((e (elpaca-get (car data)))
+(defun elpaca-log-magit-diff (id ref)
+  "Show diff for ID at REF."
+  (if-let ((fboundp 'magit-show-commit)
+           (e (elpaca-get id))
            (default-directory (elpaca<-repo-dir e)))
-      (magit-show-commit (cdr data))
-    (user-error "Unable to show ref at point")))
+      (let ((magit-display-buffer-noselect elpaca-log-update-mode)
+            (magit-uniquify-buffer-names (not elpaca-log-update-mode))
+            (magit-buffer-name-format "*elpaca-diff*"))
+        (ignore magit-display-buffer-noselect magit-uniquify-buffer-names
+                magit-buffer-name-format)
+        (magit-show-commit ref))
+    (user-error "Unable to show %s ref %s" id ref)))
+
+(defun elpaca-log-diff (item ref)
+  "Display diff buffer for ITEM at REF."
+  (let ((displayp elpaca-log-update-mode ))
+    (elpaca-with-dir item repo
+      (elpaca-with-process-call ("git" "show" ref)
+        (with-current-buffer (get-buffer-create "*elpaca-diff*")
+          (if failure (progn (kill-this-buffer)
+                             (user-error "Unable to show diff for current revision"))
+            (erase-buffer)
+            (insert stdout)
+            (diff-mode)
+            (setq header-line-format (format "%s" item))
+            (funcall (if displayp #'display-buffer #'pop-to-buffer)
+                     (current-buffer) '((display-buffer-reuse-window display-buffer-below-selected)))))))))
+
+(defun elpaca-log-view-diff (data)
+  "View commit diff for current log line's DATA."
+  (interactive (list (save-excursion (goto-char (line-beginning-position))
+                                     (save-restriction
+                                       (narrow-to-region (point) (line-end-position))
+                                       (condition-case _ (forward-button 1)
+                                         (error (user-error "No ref found on current line")))
+                                       (get-text-property (point) 'button-data)))))
+  (funcall elpaca-log-diff-function (car data) (cdr data)))
 
 (defun elpaca-log--updates (entries)
   "Return compact update log from ENTRIES."
   (cl-loop
    with compact
-   with buttonp = (fboundp 'magit-show-commit)
    for entry in entries
    do (if-let ((cols (cadr entry))
                (status (aref cols 1))
                ((equal status "update-log"))
                (info (aref cols 2))
-               (tokens (split-string info " "))
+               ((not (string-prefix-p "$git" info)))
+               (tokens (split-string info " " 'omit-nulls))
                (commit (pop tokens))
                (date (propertize (replace-regexp-in-string "^.*\\((.*)\\)" "\\1" info)
                                  'face 'elpaca-log-info))
@@ -164,9 +219,8 @@ If it is a function, it's return value is used."
                        (replace-regexp-in-string
                         "^.*: " (lambda (s) (propertize s 'face 'elpaca-log-highlight))
                         i nil t)))
-               (button (if buttonp (elpaca-ui--buttonize commit #'elpaca-log--show-ref
-                                                         (cons (car entry) commit))
-                         commit))
+               (button (elpaca-ui--buttonize commit #'elpaca-log-view-diff
+                                             (cons (car entry) commit)))
                (copy (copy-tree entry)))
           (progn
             (setf (aref (cadr copy) 2) (concat button " " info " " date))
@@ -217,6 +271,12 @@ If it is a function, it's return value is used."
   (< (string-to-number (aref (cadr a) 3))
      (string-to-number (aref (cadr b) 3))))
 
+(defvar elpaca-log-mode-map
+  (let ((m (make-sparse-keymap)))
+    (set-keymap-parent m elpaca-ui-mode-map)
+    (define-key m (kbd "gd") 'elpaca-log-view-diff)
+    m))
+
 (define-derived-mode elpaca-log-mode elpaca-ui-mode "elpaca-log-mode"
   "Major mode for displaying Elpaca order log entries."
   (setq tabulated-list-format [("Package" 30 t)
@@ -236,23 +296,11 @@ If it is a function, it's return value is used."
 ;;;###autoload
 (defun elpaca-log (&optional query)
   "Display `elpaca-log-buffer' filtered by QUERY."
-  (interactive (list (when-let ((pkg (ignore-errors (elpaca-ui-current-package)))
-                                (query (format "^%s$|" (symbol-name pkg)))
-                                (quoted (regexp-quote query)))
-                       (if (string-match-p quoted elpaca-ui-search-query)
-                           (replace-regexp-in-string quoted "" elpaca-ui-search-query)
-                         (concat (string-trim elpaca-ui-search-query) " " query)))))
+  (interactive)
   (with-current-buffer (get-buffer-create elpaca-log-buffer)
     (unless (derived-mode-p 'elpaca-log-mode) (elpaca-log-mode))
     (elpaca-ui--update-search-query (current-buffer) (or query elpaca-ui-search-query))
     (pop-to-buffer elpaca-log-buffer '((display-buffer-reuse-window display-buffer-same-window)))))
-
-;;;###autoload
-(defun elpaca-status ()
-  "Log most recent events for packages."
-  (interactive)
-  (with-current-buffer (elpaca-log)
-    (elpaca-log (alist-get 'elpaca-status elpaca-log-command-queries "#unique"))))
 
 (provide 'elpaca-log)
 ;;; elpaca-log.el ends here

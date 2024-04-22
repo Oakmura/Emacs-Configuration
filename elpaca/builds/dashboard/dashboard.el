@@ -27,6 +27,9 @@
 
 (require 'dashboard-widgets)
 
+;;
+;;; Externals
+
 (declare-function bookmark-get-filename "ext:bookmark.el")
 (declare-function bookmark-all-names "ext:bookmark.el")
 (declare-function dashboard-ls--dirs "ext:dashboard-ls.el")
@@ -38,6 +41,9 @@
 
 (declare-function dashboard-refresh-buffer "dashboard.el")
 
+;;
+;;; Customization
+
 (defgroup dashboard nil
   "Extensible startup screen."
   :group 'applications)
@@ -45,17 +51,17 @@
 ;; Custom splash screen
 (defvar dashboard-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-p") 'dashboard-previous-line)
-    (define-key map (kbd "C-n") 'dashboard-next-line)
-    (define-key map (kbd "<up>") 'dashboard-previous-line)
-    (define-key map (kbd "<down>") 'dashboard-next-line)
-    (define-key map (kbd "k") 'dashboard-previous-line)
-    (define-key map (kbd "j") 'dashboard-next-line)
-    (define-key map [tab] 'widget-forward)
-    (define-key map (kbd "C-i") 'widget-forward)
-    (define-key map [backtab] 'widget-backward)
-    (define-key map (kbd "RET") 'dashboard-return)
-    (define-key map [mouse-1] 'dashboard-mouse-1)
+    (define-key map (kbd "C-p") #'dashboard-previous-line)
+    (define-key map (kbd "C-n") #'dashboard-next-line)
+    (define-key map (kbd "<up>") #'dashboard-previous-line)
+    (define-key map (kbd "<down>") #'dashboard-next-line)
+    (define-key map (kbd "k") #'dashboard-previous-line)
+    (define-key map (kbd "j") #'dashboard-next-line)
+    (define-key map [tab] #'widget-forward)
+    (define-key map (kbd "C-i") #'widget-forward)
+    (define-key map [backtab] #'widget-backward)
+    (define-key map (kbd "RET") #'dashboard-return)
+    (define-key map [mouse-1] #'dashboard-mouse-1)
     (define-key map (kbd "}") #'dashboard-next-section)
     (define-key map (kbd "{") #'dashboard-previous-section)
 
@@ -75,10 +81,20 @@
     map)
   "Keymap for dashboard mode.")
 
+(defcustom dashboard-before-initialize-hook nil
+  "Hook that is run before dashboard buffer is initialized."
+  :group 'dashboard
+  :type 'hook)
+
 (defcustom dashboard-after-initialize-hook nil
   "Hook that is run after dashboard buffer is initialized."
   :group 'dashboard
   :type 'hook)
+
+(defcustom dashboard-hide-cursor nil
+  "Whether to hide the cursor in the dashboard."
+  :type 'boolean
+  :group 'dashboard)
 
 (define-derived-mode dashboard-mode special-mode "Dashboard"
   "Dashboard major mode for startup screen."
@@ -91,6 +107,8 @@
   (when (featurep 'display-line-numbers) (display-line-numbers-mode -1))
   (when (featurep 'page-break-lines) (page-break-lines-mode 1))
   (setq-local revert-buffer-function #'dashboard-refresh-buffer)
+  (when dashboard-hide-cursor
+    (setq-local cursor-type nil))
   (setq inhibit-startup-screen t
         buffer-read-only t
         truncate-lines t))
@@ -100,8 +118,51 @@
   :type 'boolean
   :group 'dashboard)
 
-(defconst dashboard-buffer-name "*dashboard*"
-  "Dashboard's buffer name.")
+(defcustom dashboard-vertically-center-content nil
+  "Whether to vertically center content within the window."
+  :type 'boolean
+  :group 'dashboard)
+
+(defcustom dashboard-startupify-list
+  '(dashboard-insert-banner
+    dashboard-insert-newline
+    dashboard-insert-banner-title
+    dashboard-insert-newline
+    dashboard-insert-init-info
+    dashboard-insert-items
+    dashboard-insert-newline
+    dashboard-insert-footer)
+  "List of dashboard widgets (in order) to insert in dashboard buffer.
+Avalaible functions:
+  `dashboard-insert-newline'
+  `dashboard-insert-page-break'
+  `dashboard-insert-banner'
+  `dashboard-insert-banner-title'
+  `dashboard-insert-navigator'
+  `dashboard-insert-init-info'
+  `dashboard-insert-items'
+  `dashboard-insert-footer'
+
+It must be a function or a cons cell where specify function and
+its arg.
+
+Also you can add your custom function or a lambda to the list.
+example:
+ (lambda () (delete-char -1))"
+  :type '(repeat (choice
+                  function
+                  (cons function sexp)))
+  :group 'dashboard)
+
+(defcustom dashboard-navigation-cycle nil
+  "Non-nil cycle the section navigation."
+  :type 'boolean
+  :group 'dashboard)
+
+(defcustom dashboard-buffer-name "*dashboard*"
+  "Dashboard's buffer name."
+  :type 'string
+  :group 'dashboard)
 
 (defvar dashboard-force-refresh nil
   "If non-nil, force refresh dashboard buffer.")
@@ -110,8 +171,8 @@
   "List of section starting positions.")
 
 ;;
-;; Util
-;;
+;;; Util
+
 (defun dashboard--goto-line (line)
   "Goto LINE."
   (goto-char (point-min)) (forward-line (1- line)))
@@ -126,58 +187,75 @@
      (move-to-column column)))
 
 ;;
-;; Core
-;;
+;;; Core
+
+(defun dashboard--separator ()
+  "Return separator used to search."
+  (concat "\n" dashboard-page-separator))
+
 (defun dashboard--current-section ()
   "Return section symbol in dashboard."
   (save-excursion
-    (if (and (search-backward dashboard-page-separator nil t)
-             (search-forward dashboard-page-separator nil t))
-        (let ((ln (thing-at-point 'line)))
-          (cond ((string-match-p "Recent Files:" ln)     'recents)
-                ((string-match-p "Bookmarks:" ln)        'bookmarks)
-                ((string-match-p "Projects:" ln)         'projects)
-                ((string-match-p "Agenda for " ln)       'agenda)
-                ((string-match-p "Registers:" ln)        'registers)
-                ((string-match-p "List Directories:" ln) 'ls-directories)
-                ((string-match-p "List Files:" ln)       'ls-files)
-                (t (user-error "Unknown section from dashboard"))))
+    (if-let* ((sep (dashboard--separator))
+              ((and (search-backward sep nil t)
+                    (search-forward sep nil t)))
+              (ln (thing-at-point 'line t)))
+        (cond ((string-match-p "Recent Files:" ln)     'recents)
+              ((string-match-p "Bookmarks:" ln)        'bookmarks)
+              ((string-match-p "Projects:" ln)         'projects)
+              ((string-match-p "Agenda for " ln)       'agenda)
+              ((string-match-p "Registers:" ln)        'registers)
+              ((string-match-p "List Directories:" ln) 'ls-directories)
+              ((string-match-p "List Files:" ln)       'ls-files)
+              (t (user-error "Unknown section from dashboard")))
       (user-error "Failed searching dashboard section"))))
 
 ;;
-;; Navigation
-;;
+;;; Navigation
+
 (defun dashboard-previous-section ()
-  "Navigate back to previous section."
+  "Navigate forward to next section."
   (interactive)
-  (let ((current-position (point)) current-section-start previous-section-start)
-    (dolist (elt dashboard--section-starts)
-      (when (and current-section-start (not previous-section-start))
-        (setq previous-section-start elt))
-      (when (and (not current-section-start) (< elt current-position))
-        (setq current-section-start elt)))
-    (goto-char (if (eq current-position current-section-start)
-                   previous-section-start
-                 current-section-start))))
+  (let* ((items-len (1- (length dashboard-items)))
+         (first-item (car (nth 0 dashboard-items)))
+         (current (or (ignore-errors (dashboard--current-section))
+                      first-item))
+         (items (mapcar #'car dashboard-items))
+         (find (cl-position current items :test #'equal))
+         (prev-index (1- find))
+         (prev (cond (dashboard-navigation-cycle
+                      (if (< prev-index 0) (nth items-len items)
+                        (nth prev-index items)))
+                     (t
+                      (if (< prev-index 0) (nth 0 items)
+                        (nth prev-index items))))))
+    (dashboard--goto-section prev)))
 
 (defun dashboard-next-section ()
   "Navigate forward to next section."
   (interactive)
-  (let ((current-position (point)) next-section-start
-        (section-starts (reverse dashboard--section-starts)))
-    (dolist (elt section-starts)
-      (when (and (not next-section-start)
-                 (> elt current-position))
-        (setq next-section-start elt)))
-    (when next-section-start
-      (goto-char next-section-start))))
+  (let* ((items-len (1- (length dashboard-items)))
+         (last-item (car (nth items-len dashboard-items)))
+         (current (or (ignore-errors (dashboard--current-section))
+                      last-item))
+         (items (mapcar #'car dashboard-items))
+         (find (cl-position current items :test #'equal))
+         (next-index (1+ find))
+         (next (cond (dashboard-navigation-cycle
+                      (or (nth next-index items)
+                          (nth 0 items)))
+                     (t
+                      (if (< items-len next-index)
+                          (nth (min items-len next-index) items)
+                        (nth next-index items))))))
+    (dashboard--goto-section next)))
 
 (defun dashboard--section-lines ()
   "Return a list of integer represent the starting line number of each section."
   (let (pb-lst)
     (save-excursion
       (goto-char (point-min))
-      (while (search-forward dashboard-page-separator nil t)
+      (while (search-forward (dashboard--separator) nil t)
         (when (ignore-errors (dashboard--current-section))
           (push (line-number-at-pos) pb-lst))))
     (setq pb-lst (reverse pb-lst))
@@ -232,8 +310,8 @@ Optional prefix ARG says how many lines to move; default is one line."
   (beginning-of-line-text))
 
 ;;
-;; ffap
-;;
+;;; ffap
+
 (defun dashboard--goto-section (section)
   "Move to SECTION declares in variable `dashboard-item-shortcuts'."
   (let ((fnc (intern (format "dashboard-jump-to-%s" section))))
@@ -290,8 +368,8 @@ Optional argument ARGS adviced function arguments."
 (advice-add 'ffap-guesser :around #'dashboard--ffap-guesser--adv)
 
 ;;
-;; Removal
-;;
+;;; Removal
+
 (defun dashboard-remove-item-under ()
   "Remove a item from the current item section."
   (interactive)
@@ -337,8 +415,8 @@ Optional argument ARGS adviced function arguments."
   (interactive))  ; TODO: ..
 
 ;;
-;; Confirmation
-;;
+;;; Confirmation
+
 (defun dashboard-return ()
   "Hit return key in dashboard buffer."
   (interactive)
@@ -368,8 +446,8 @@ Optional argument ARGS adviced function arguments."
       (setq track-mouse old-track-mouse))))
 
 ;;
-;; Insertion
-;;
+;;; Insertion
+
 (defmacro dashboard--with-buffer (&rest body)
   "Execute BODY in dashboard buffer."
   (declare (indent 0))
@@ -377,17 +455,42 @@ Optional argument ARGS adviced function arguments."
      (let ((inhibit-read-only t)) ,@body)
      (current-buffer)))
 
-(defun dashboard-maximum-section-length ()
-  "For the just-inserted section, calculate the length of the longest line."
-  (let ((max-line-length 0))
+(defun dashboard-insert-items ()
+  "Function to insert dashboard items.
+See `dashboard-item-generators' for all items available."
+  (let ((recentf-is-on (recentf-enabled-p))
+        (origial-recentf-list recentf-list))
+    (mapc (lambda (els)
+            (let* ((el (or (car-safe els) els))
+                   (list-size
+                    (or (cdr-safe els)
+                        dashboard-items-default-length))
+                   (item-generator
+                    (cdr-safe (assoc el dashboard-item-generators))))
+
+              (insert "\n")
+              (push (point) dashboard--section-starts)
+              (funcall item-generator list-size)
+              (goto-char (point-max))
+
+              (when recentf-is-on
+                (setq recentf-list origial-recentf-list))))
+          dashboard-items)
+
+    (when dashboard-center-content
+      (dashboard-center-text
+       (if dashboard--section-starts
+           (car (last dashboard--section-starts))
+         (point))
+       (point-max)))
+
     (save-excursion
-      (dashboard-previous-section)
-      (while (not (eobp))
-        (setq max-line-length
-              (max max-line-length
-                   (- (line-end-position) (line-beginning-position))))
-        (forward-line 1)))
-    max-line-length))
+      (dolist (start dashboard--section-starts)
+        (goto-char start)
+        (insert dashboard-page-separator)))
+
+    (insert "\n")
+    (insert dashboard-page-separator)))
 
 (defun dashboard-insert-startupify-lists ()
   "Insert the list of widgets into the buffer."
@@ -395,54 +498,35 @@ Optional argument ARGS adviced function arguments."
   (let ((inhibit-redisplay t)
         (recentf-is-on (recentf-enabled-p))
         (origial-recentf-list recentf-list)
-        (dashboard-num-recents (or (cdr (assoc 'recents dashboard-items)) 0))
-        (max-line-length 0))
+        (dashboard-num-recents (or (cdr (assoc 'recents dashboard-items)) 0)))
     (when recentf-is-on
       (setq recentf-list (dashboard-subseq recentf-list dashboard-num-recents)))
     (dashboard--with-buffer
       (when (or dashboard-force-refresh (not (eq major-mode 'dashboard-mode)))
+        (run-hooks 'dashboard-before-initialize-hook)
         (erase-buffer)
-        (dashboard-insert-banner)
-        (insert "\n")
         (setq dashboard--section-starts nil)
-        (mapc (lambda (els)
-                (let* ((el (or (car-safe els) els))
-                       (list-size
-                        (or (cdr-safe els)
-                            dashboard-items-default-length))
-                       (item-generator
-                        (cdr-safe (assoc el dashboard-item-generators))))
-                  (push (point) dashboard--section-starts)
-                  (funcall item-generator list-size)
-                  (goto-char (point-max))
-                  ;; add a newline so the next section-name doesn't get include
-                  ;; on the same line.
-                  (insert "\n")
-                  (when recentf-is-on
-                    (setq recentf-list origial-recentf-list))
-                  (setq max-line-length
-                        (max max-line-length (dashboard-maximum-section-length)))))
-              dashboard-items)
-        (when dashboard-center-content
-          (dashboard-center-text
-           (if dashboard--section-starts
-               (car (last dashboard--section-starts))
-             (point))
-           (point-max)))
-        (save-excursion
-          (dolist (start dashboard--section-starts)
-            (goto-char start)
-            (delete-char -1)  ; delete the newline we added previously
-            (insert dashboard-page-separator)))
-        (progn
-          (delete-char -1)
-          (insert dashboard-page-separator))
-        (dashboard-insert-footer)
+
+        (mapc (lambda (entry)
+                (if (and (listp entry)
+                         (not (functionp entry)))
+                    (apply (car entry) `(,(cdr entry)))
+                  (funcall entry)))
+              dashboard-startupify-list)
+
+        (when dashboard-vertically-center-content
+          (goto-char (point-min))
+          (when-let* ((content-height (cdr (window-absolute-pixel-position (point-max))))
+                      (vertical-padding (floor (/ (- (window-pixel-height) content-height) 2)))
+                      ((> vertical-padding 0))
+                      (vertical-lines (1- (floor (/ vertical-padding (line-pixel-height)))))
+                      ((> vertical-lines 0)))
+            (insert (make-string vertical-lines ?\n))))
+
         (goto-char (point-min))
         (dashboard-mode)))
     (when recentf-is-on
       (setq recentf-list origial-recentf-list))))
-
 
 ;;;###autoload
 (defun dashboard-open (&rest _)

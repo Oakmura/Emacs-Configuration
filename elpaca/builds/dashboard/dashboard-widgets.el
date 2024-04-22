@@ -17,6 +17,9 @@
 (require 'image)
 (require 'subr-x)
 
+;;
+;;; Externals
+
 ;; Compiler pacifier
 (declare-function all-the-icons-icon-for-dir "ext:all-the-icons.el")
 (declare-function all-the-icons-icon-for-file "ext:all-the-icons.el")
@@ -56,7 +59,6 @@
 (declare-function org-time-string-to-time "ext:org.el")
 (declare-function org-today "ext:org.el")
 (declare-function recentf-cleanup "ext:recentf.el")
-(defalias 'org-time-less-p 'time-less-p)
 (defvar org-level-faces)
 (defvar org-agenda-new-buffers)
 (defvar org-agenda-prefix-format)
@@ -68,9 +70,20 @@
 (declare-function string-pixel-width "subr-x.el")   ; TODO: remove this after 29.1
 (declare-function shr-string-pixel-width "shr.el")  ; TODO: remove this after 29.1
 
-(defcustom dashboard-page-separator "\n\n"
+(defvar recentf-list nil)
+
+(defvar dashboard-buffer-name)
+
+;;
+;;; Customization
+
+(defcustom dashboard-page-separator "\n"
   "Separator to use between the different pages."
-  :type 'string
+  :type '(choice
+          (const :tag "Default" "\n")
+          (const :tag "Use Page indicator (requires page-break-lines)"
+                 "\n\f\n")
+          (string :tag "Use Custom String"))
   :group 'dashboard)
 
 (defcustom dashboard-image-banner-max-height 0
@@ -93,6 +106,14 @@ preserved."
   :type 'integer
   :group 'dashboard)
 
+(defcustom dashboard-image-extra-props nil
+  "Additional image attributes to assign to the image.
+This could be useful for displaying images with transparency,
+for example, by setting the `:mask' property to `heuristic'.
+See `create-image' and Info node `(elisp)Image Descriptors'."
+  :type 'plist
+  :group 'dashboard)
+
 (defcustom dashboard-set-heading-icons nil
   "When non nil, heading sections will have icons."
   :type 'boolean
@@ -107,16 +128,22 @@ preserved."
   "When non nil, a navigator will be displayed under the banner."
   :type 'boolean
   :group 'dashboard)
+(make-obsolete-variable 'dashboard-set-navigator
+                        'dashboard-startupify-list "1.9.0")
 
 (defcustom dashboard-set-init-info t
   "When non nil, init info will be displayed under the banner."
   :type 'boolean
   :group 'dashboard)
+(make-obsolete-variable 'dashboard-set-init-info
+                        'dashboard-startupify-list "1.9.0")
 
 (defcustom dashboard-set-footer t
   "When non nil, a footer will be displayed at the bottom."
   :type 'boolean
   :group 'dashboard)
+(make-obsolete-variable 'dashboard-set-footer
+                        'dashboard-startupify-list "1.9.0")
 
 (defcustom dashboard-footer-messages
   '("The one true editor, Emacs!"
@@ -230,7 +257,16 @@ The format is: `icon title help action face prefix suffix`.
 Example:
 `((\"☆\" \"Star\" \"Show stars\" (lambda (&rest _)
                                     (show-stars)) warning \"[\" \"]\"))"
-  :type '(repeat (repeat (list string string string function symbol string string)))
+  :type '(repeat (repeat (list string
+                               string
+                               string
+                               function
+                               (choice face
+                                       (repeat :tag "Anonymous face" sexp))
+                               (choice string
+                                       (const nil))
+                               (choice string
+                                       (const nil)))))
   :group 'dashboard)
 
 (defcustom dashboard-init-info
@@ -320,26 +356,43 @@ ARGS should be a plist containing `:height', `:v-adjust', or `:face' properties.
                              :v-adjust -0.05
                              :face 'dashboard-footer-icon-face)))
     (propertize ">" 'face 'dashboard-footer-icon-face))
-  "Footer's icon."
+  "Footer's icon.
+It can be a string or a string list for display random icons."
+  :type '(choice string
+                 (repeat string))
+  :group 'dashboard)
+
+(defcustom dashboard-heading-shorcut-format " (%s)"
+  "String for display key used in headings."
   :type 'string
   :group 'dashboard)
 
 (defcustom dashboard-startup-banner 'official
-  "Specify the startup banner.
-Default value is `official', it displays the Emacs logo.  `logo' displays Emacs
-alternative logo.  If set to `ascii', the value of `dashboard-banner-ascii'
-will be used as the banner.  An integer value is the index of text banner.
-A string value must be a path to a .PNG or .TXT file.  If the value is
-nil then no banner is displayed."
-  :type '(choice (const   :tag "no banner" nil)
-                 (const   :tag "offical"   official)
+  "Specify the banner type to use.
+Value can be
+ - \\='official  displays the official Emacs logo.
+ - \\='logo  displays an alternative Emacs logo.
+ - an integer which displays one of the text banners.
+ - a string that specifies the path of an custom banner
+   supported files types are gif/image/text/xbm.
+ - a cons of 2 strings which specifies the path of an image to use
+   and other path of a text file to use if image isn't supported.
+ - a list that can display an random banner, supported values are:
+   string (filepath), \\='official, \\='logo and integers."
+  :type '(choice (const   :tag "official"  official)
                  (const   :tag "logo"      logo)
                  (const   :tag "ascii"     ascii)
                  (integer :tag "index of a text banner")
-                 (string  :tag "a path to an image or text banner")
-                 (cons    :tag "an image and text banner"
+                 (string  :tag "path to an image or text banner")
+                 (cons    :tag "image and text banner"
                           (string :tag "image banner path")
-                          (string :tag "text banner path")))
+                          (string :tag "text banner path"))
+                 (repeat :tag "random banners"
+                         (choice (string  :tag "a path to an image or text banner")
+                                 (const   :tag "official" official)
+                                 (const   :tag "logo"     logo)
+                                 (const   :tag "ascii"    ascii)
+                                 (integer :tag "index of a text banner"))))
   :group 'dashboard)
 
 (defcustom dashboard-item-generators
@@ -352,10 +405,10 @@ nil then no banner is displayed."
 Will be of the form `(list-type . list-function)'.
 Possible values for list-type are: `recents', `bookmarks', `projects',
 `agenda' ,`registers'."
-  :type  '(repeat (alist :key-type symbol :value-type function))
+  :type  '(alist :key-type symbol :value-type function)
   :group 'dashboard)
 
-(defcustom dashboard-projects-backend 'projectile
+(defcustom dashboard-projects-backend 'project-el
   "The package that supplies the list of recent projects.
 With the value `projectile', the projects widget uses the package
 projectile (available in MELPA).  With the value `project-el',
@@ -381,7 +434,9 @@ installed."
 Will be of the form `(list-type . list-size)'.
 If nil it is disabled.  Possible values for list-type are:
 `recents' `bookmarks' `projects' `agenda' `registers'."
-  :type  '(repeat (alist :key-type symbol :value-type integer))
+  :type '(repeat (choice
+                  symbol
+                  (cons symbol integer)))
   :group 'dashboard)
 
 (defcustom dashboard-item-shortcuts
@@ -393,8 +448,8 @@ If nil it is disabled.  Possible values for list-type are:
   "Association list of items and their corresponding shortcuts.
 Will be of the form `(list-type . keys)' as understood by `(kbd keys)'.
 If nil, shortcuts are disabled.  If an entry's value is nil, that item's
-shortcut is disbaled.  See `dashboard-items' for possible values of list-type.'"
-  :type '(repeat (alist :key-type symbol :value-type string))
+shortcut is disabled.  See `dashboard-items' for possible values of list-type.'"
+  :type '(alist :key-type symbol :value-type string)
   :group 'dashboard)
 
 (defcustom dashboard-item-names nil
@@ -431,13 +486,9 @@ Set to nil for unbounded."
   :type 'string
   :group 'dashboard)
 
-(defvar recentf-list nil)
-
-(defvar dashboard-buffer-name)
-
 ;;
-;; Faces
-;;
+;;; Faces
+
 (defface dashboard-text-banner
   '((t (:inherit font-lock-keyword-face)))
   "Face used for text banners."
@@ -486,8 +537,8 @@ Set to nil for unbounded."
  'dashboard-heading-face 'dashboard-heading "1.2.6")
 
 ;;
-;; Util
-;;
+;;; Util
+
 (defmacro dashboard-mute-apply (&rest body)
   "Execute BODY without message."
   (declare (indent 0) (debug t))
@@ -515,8 +566,8 @@ Set to nil for unbounded."
        (if (zerop (% len width)) 0 1))))  ; add one if exceeed
 
 ;;
-;; Generic widget helpers
-;;
+;;; Widget helpers
+
 (defun dashboard-subseq (seq end)
   "Return the subsequence of SEQ from 0 to END."
   (let ((len (length seq))) (butlast seq (- len (min len end)))))
@@ -548,7 +599,8 @@ Optionally, provide NO-NEXT-LINE to move the cursor forward a line."
     `(progn
        (eval-when-compile (defvar dashboard-mode-map))
        (defun ,sym nil
-         ,(concat "Jump to " name ".  This code is dynamically generated in `dashboard-insert-shortcut'.")
+         ,(concat "Jump to " name ".
+This code is dynamically generated in `dashboard-insert-shortcut'.")
          (interactive)
          (unless (search-forward ,search-label (point-max) t)
            (search-backward ,search-label (point-min) t))
@@ -572,6 +624,14 @@ If MESSAGEBUF is not nil then MSG is also written in message buffer."
 (defun dashboard-insert-page-break ()
   "Insert a page break line in dashboard buffer."
   (dashboard-append dashboard-page-separator))
+
+(defun dashboard-insert-newline (&optional times)
+  "When called without an argument, insert a newline.
+When called with TIMES return a function that insert TIMES number of newlines."
+  (if times
+      (lambda ()
+        (insert (make-string times (string-to-char "\n") t)))
+    (insert "\n")))
 
 (defun dashboard-insert-heading (heading &optional shortcut icon)
   "Insert a widget HEADING in dashboard buffer, adding SHORTCUT, ICON if provided."
@@ -611,10 +671,10 @@ If MESSAGEBUF is not nil then MSG is also written in message buffer."
   (let ((ov (make-overlay (- (point) (length heading)) (point) nil t)))
     (overlay-put ov 'display (or (cdr (assoc heading dashboard-item-names)) heading))
     (overlay-put ov 'face 'dashboard-heading))
-  (when shortcut (insert (format " (%s)" shortcut))))
+  (when shortcut (insert (format dashboard-heading-shorcut-format shortcut))))
 
-(defun dashboard-center-text (start end)
-  "Center the text between START and END."
+(defun dashboard--find-max-width (start end)
+  "Return the max width within the region START and END."
   (save-excursion
     (goto-char start)
     (let ((width 0))
@@ -623,8 +683,13 @@ If MESSAGEBUF is not nil then MSG is also written in message buffer."
                (line-length (dashboard-str-len line-str)))
           (setq width (max width line-length)))
         (forward-line 1))
-      (let ((prefix (propertize " " 'display `(space . (:align-to (- center ,(/ width 2)))))))
-        (add-text-properties start end `(line-prefix ,prefix indent-prefix ,prefix))))))
+      width)))
+
+(defun dashboard-center-text (start end)
+  "Center the text between START and END."
+  (let* ((width (dashboard--find-max-width start end))
+         (prefix (propertize " " 'display `(space . (:align-to (- center ,(/ (float width) 2)))))))
+    (add-text-properties start end `(line-prefix ,prefix indent-prefix ,prefix))))
 
 (defun dashboard-insert-center (&rest strings)
   "Insert STRINGS in the center of the buffer."
@@ -633,8 +698,7 @@ If MESSAGEBUF is not nil then MSG is also written in message buffer."
     (dashboard-center-text start (point))))
 
 ;;
-;; BANNER
-;;
+;;; Banner
 
 (defun dashboard-get-banner-path (index)
   "Return the full path to banner with index INDEX."
@@ -647,10 +711,9 @@ If MESSAGEBUF is not nil then MSG is also written in message buffer."
   ;; - That function will only look at filenames, this one will inspect the file data itself.
   (and (file-exists-p img) (ignore-errors (image-type-available-p (image-type img)))))
 
-(defun dashboard-choose-banner ()
-  "Return a plist specifying the chosen banner based on `dashboard-startup-banner'."
-  (pcase dashboard-startup-banner
-    ('nil nil)
+(defun dashboard-choose-banner (banner)
+  "Return a plist specifying the chosen banner based on BANNER."
+  (pcase banner
     ('official
      (append (when (image-type-available-p 'png)
                (list :image dashboard-banner-official-png))
@@ -662,24 +725,29 @@ If MESSAGEBUF is not nil then MSG is also written in message buffer."
     ('ascii
      (append (list :text dashboard-banner-ascii)))
     ((pred integerp)
-     (list :text (dashboard-get-banner-path dashboard-startup-banner)))
+     (list :text (dashboard-get-banner-path banner)))
     ((pred stringp)
-     (pcase dashboard-startup-banner
+     (pcase banner
        ((pred (lambda (f) (not (file-exists-p f))))
-        (message "could not find banner %s, use default instead" dashboard-startup-banner)
+        (message "could not find banner %s, use default instead" banner)
         (list :text (dashboard-get-banner-path 1)))
        ((pred (string-suffix-p ".txt"))
-        (list :text (if (file-exists-p dashboard-startup-banner)
-                        dashboard-startup-banner
-                      (message "could not find banner %s, use default instead" dashboard-startup-banner)
+        (list :text (if (file-exists-p banner)
+                        banner
+                      (message "could not find banner %s, use default instead" banner)
                       (dashboard-get-banner-path 1))))
        ((pred dashboard--image-supported-p)
-        (list :image dashboard-startup-banner
+        (list :image banner
               :text (dashboard-get-banner-path 1)))
        (_
-        (message "unsupported file type %s" (file-name-nondirectory dashboard-startup-banner))
+        (message "unsupported file type %s" (file-name-nondirectory banner))
         (list :text (dashboard-get-banner-path 1)))))
-    (`(,img . ,txt)
+    ((and
+      (pred listp)
+      (pred (lambda (c)
+              (and (not (proper-list-p c))
+                   (not (null c)))))
+      `(,img . ,txt))
      (list :image (if (dashboard--image-supported-p img)
                       img
                     (message "could not find banner %s, use default instead" img)
@@ -688,14 +756,22 @@ If MESSAGEBUF is not nil then MSG is also written in message buffer."
                      txt
                    (message "could not find banner %s, use default instead" txt)
                    (dashboard-get-banner-path 1))))
-    (_
-     (message "unsupported banner config %s" dashboard-startup-banner))))
+    ((and
+      (pred proper-list-p)
+      (pred (lambda (l) (not (null l)))))
 
-(defun dashboard--type-is-gif-p (image-path)
-  "Return if image is a gif.
+     (let* ((max (length banner))
+            (choose (nth (random max) banner)))
+       (dashboard-choose-banner choose)))
+    (_
+     (user-error "Unsupported banner type: `%s'" banner)
+     nil)))
+
+(defun dashboard--image-animated-p (image-path)
+  "Return if image is a gif or webp.
 String -> bool.
 Argument IMAGE-PATH path to the image."
-  (eq 'gif (image-type image-path)))
+  (memq (image-type image-path) '(gif webp)))
 
 (defun dashboard--type-is-xbm-p (image-path)
   "Return if image is a xbm.
@@ -706,47 +782,50 @@ Argument IMAGE-PATH path to the image."
 (defun dashboard-insert-banner ()
   "Insert the banner at the top of the dashboard."
   (goto-char (point-max))
-  (when-let (banner (dashboard-choose-banner))
+  (when-let ((banner (dashboard-choose-banner dashboard-startup-banner)))
     (insert "\n")
     (let ((start (point))
           buffer-read-only
           text-width
-          image-spec)
-      (when (display-graphic-p) (insert "\n"))
+          image-spec
+          (graphic-mode (display-graphic-p)))
+      (when graphic-mode (insert "\n"))
       ;; If specified, insert a text banner.
-      (when-let (txt (plist-get banner :text))
-        (if (eq dashboard-startup-banner 'ascii)
-            (save-excursion (insert txt))
-          (insert-file-contents txt))
+      (when-let ((txt (plist-get banner :text)))
+        (if (file-exists-p txt)
+            (insert-file-contents txt)
+          (save-excursion (insert txt)))
         (put-text-property (point) (point-max) 'face 'dashboard-text-banner)
         (setq text-width 0)
         (while (not (eobp))
           (let ((line-length (- (line-end-position) (line-beginning-position))))
-            (if (< text-width line-length)
-                (setq text-width line-length)))
+            (when (< text-width line-length)
+              (setq text-width line-length)))
           (forward-line 1)))
       ;; If specified, insert an image banner. When displayed in a graphical frame, this will
       ;; replace the text banner.
-      (when-let (img (plist-get banner :image))
-        (let ((size-props
+      (when-let ((img (plist-get banner :image)))
+        (let ((img-props
                (append (when (> dashboard-image-banner-max-width 0)
                          (list :max-width dashboard-image-banner-max-width))
                        (when (> dashboard-image-banner-max-height 0)
-                         (list :max-height dashboard-image-banner-max-height)))))
+                         (list :max-height dashboard-image-banner-max-height))
+                       dashboard-image-extra-props)))
           (setq image-spec
-                (cond ((dashboard--type-is-gif-p img)
+                (cond ((dashboard--image-animated-p img)
                        (create-image img))
                       ((dashboard--type-is-xbm-p img)
                        (create-image img))
                       ((image-type-available-p 'imagemagick)
-                       (apply 'create-image img 'imagemagick nil size-props))
+                       (apply 'create-image img 'imagemagick nil img-props))
                       (t
                        (apply 'create-image img nil nil
                               (when (and (fboundp 'image-transforms-p)
                                          (memq 'scale (funcall 'image-transforms-p)))
-                                size-props))))))
+                                img-props))))))
         (add-text-properties start (point) `(display ,image-spec))
-        (when (dashboard--type-is-gif-p img) (image-animate image-spec 0 t)))
+        (when (ignore-errors (image-multi-frame-p image-spec)) (image-animate image-spec 0 t)))
+
       ;; Finally, center the banner (if any).
       (when-let* ((text-align-spec `(space . (:align-to (- center ,(/ text-width 2)))))
                   (image-align-spec `(space . (:align-to (- center (0.5 . ,image-spec)))))
@@ -765,28 +844,27 @@ Argument IMAGE-PATH path to the image."
                     (t nil)))
                   (prefix (propertize " " 'display prop)))
         (add-text-properties start (point) `(line-prefix ,prefix wrap-prefix ,prefix)))
-      (insert "\n\n")
-      (add-text-properties start (point) '(cursor-intangible t inhibit-isearch t))))
+      (insert "\n")
+      (add-text-properties start (point) '(cursor-intangible t inhibit-isearch t)))))
+
+(defun dashboard-insert-banner-title ()
+  "Insert `dashboard-banner-logo-title' if it's non-nil."
   (when dashboard-banner-logo-title
     (dashboard-insert-center (propertize dashboard-banner-logo-title 'face 'dashboard-banner-logo-title))
-    (insert "\n\n"))
-  (dashboard-insert-navigator)
-  (dashboard-insert-init-info))
+    (insert "\n")))
 
 ;;
-;; INIT INFO
-;;
+;;; Initialize info
 (defun dashboard-insert-init-info ()
-  "Insert init info when `dashboard-set-init-info' is t."
-  (when dashboard-set-init-info
-    (let ((init-info (if (functionp dashboard-init-info)
-                         (funcall dashboard-init-info)
-                       dashboard-init-info)))
-      (dashboard-insert-center (propertize init-info 'face 'font-lock-comment-face)))))
+  "Insert init info."
+  (let ((init-info (if (functionp dashboard-init-info)
+                       (funcall dashboard-init-info)
+                     dashboard-init-info)))
+    (dashboard-insert-center (propertize init-info 'face 'font-lock-comment-face))))
 
 (defun dashboard-insert-navigator ()
   "Insert Navigator of the dashboard."
-  (when (and dashboard-set-navigator dashboard-navigator-buttons)
+  (when dashboard-navigator-buttons
     (dolist (line dashboard-navigator-buttons)
       (dolist (btn line)
         (let* ((icon (car btn))
@@ -807,7 +885,8 @@ Argument IMAGE-PATH path to the image."
                                (when (and icon title
                                           (not (string-equal icon ""))
                                           (not (string-equal title "")))
-                                 (propertize " " 'face 'variable-pitch))
+                                 (propertize " " 'face `(:inherit (variable-pitch
+                                                                  ,face))))
                                (when title (propertize title 'face face)))
                          :help-echo help
                          :action action
@@ -818,8 +897,7 @@ Argument IMAGE-PATH path to the image."
                          :format "%[%t%]")
           (insert " ")))
       (dashboard-center-text (line-beginning-position) (line-end-position))
-      (insert "\n"))
-    (insert "\n")))
+      (insert "\n"))))
 
 (defmacro dashboard-insert-section (section-name list list-size shortcut-id shortcut-char action &rest widget-params)
   "Add a section with SECTION-NAME and LIST of LIST-SIZE items to the dashboard.
@@ -830,7 +908,10 @@ ACTION is theaction taken when the user activates the widget button.
 WIDGET-PARAMS are passed to the \"widget-create\" function."
   `(progn
      (dashboard-insert-heading ,section-name
-                               (if (and ,list ,shortcut-char dashboard-show-shortcuts) ,shortcut-char))
+                               (when (and ,list
+                                          ,shortcut-char
+                                          dashboard-show-shortcuts)
+                                 ,shortcut-char))
      (if ,list
          (when (and (dashboard-insert-section-list
                      ,section-name
@@ -842,8 +923,8 @@ WIDGET-PARAMS are passed to the \"widget-create\" function."
        (insert (propertize "\n    --- No items ---" 'face 'dashboard-no-items-face)))))
 
 ;;
-;; Section list
-;;
+;;; Section list
+
 (defmacro dashboard-insert-section-list (section-name list action &rest rest)
   "Insert into SECTION-NAME a LIST of items, expanding ACTION and passing REST
 to widget creation."
@@ -879,16 +960,26 @@ to widget creation."
                          :format "%[%t%]")))
       ,list)))
 
-;; Footer
+;;
+;;; Footer
+
 (defun dashboard-random-footer ()
   "Return a random footer from `dashboard-footer-messages'."
   (nth (random (length dashboard-footer-messages)) dashboard-footer-messages))
 
+(defun dashboard-footer-icon ()
+  "Return footer icon or a random icon if `dashboard-footer-messages' is a list."
+  (if (and (not (null dashboard-footer-icon))
+           (listp dashboard-footer-icon))
+      (dashboard-replace-displayable
+       (nth (random (length dashboard-footer-icon))
+            dashboard-footer-icon))
+    (dashboard-replace-displayable dashboard-footer-icon)))
+
 (defun dashboard-insert-footer ()
   "Insert footer of dashboard."
-  (when-let ((footer (and dashboard-set-footer (dashboard-random-footer)))
-             (footer-icon (dashboard-replace-displayable dashboard-footer-icon)))
-    (insert "\n")
+  (when-let ((footer (dashboard-random-footer))
+             (footer-icon (dashboard-footer-icon)))
     (dashboard-insert-center
      (if (string-empty-p footer-icon) footer-icon
        (concat footer-icon " "))
@@ -896,8 +987,8 @@ to widget creation."
      "\n")))
 
 ;;
-;; Truncate
-;;
+;;; Truncate
+
 (defcustom dashboard-shorten-by-window-width nil
   "Shorten path by window edges."
   :type 'boolean
@@ -1046,8 +1137,8 @@ to widget creation."
     align-length))
 
 ;;
-;; Recentf
-;;
+;;; Recentf
+
 (defcustom dashboard-recentf-show-base nil
   "Show the base file name infront of it's path."
   :type '(choice
@@ -1097,8 +1188,8 @@ to widget creation."
        (t (format dashboard-recentf-item-format filename path))))))
 
 ;;
-;; Bookmarks
-;;
+;;; Bookmarks
+
 (defcustom dashboard-bookmarks-show-base t
   "Show the base file name infront of it's path."
   :type '(choice
@@ -1141,8 +1232,8 @@ to widget creation."
      el)))
 
 ;;
-;; Projects
-;;
+;;; Projects
+
 (defcustom dashboard-projects-switch-function
   nil
   "Custom function to switch to projects from dashboard.
@@ -1238,8 +1329,8 @@ over custom backends."
                           :error)))))
 
 ;;
-;; Org Agenda
-;;
+;;; Org Agenda
+
 (defcustom dashboard-week-agenda t
   "Show agenda weekly if its not nil."
   :type 'boolean
@@ -1297,7 +1388,9 @@ Any custom function would receives the tags from `org-get-tags'"
 
 (defun dashboard-agenda-entry-format ()
   "Format agenda entry to show it on dashboard.
-Also,it set text properties that latter are used to sort entries and perform different actions."
+
+Also,it set text properties that latter are used to sort entries and perform
+different actions."
   (let* ((scheduled-time (org-get-scheduled-time (point)))
          (deadline-time (org-get-deadline-time (point)))
          (entry-timestamp (dashboard-agenda--entry-timestamp (point)))
@@ -1370,12 +1463,12 @@ point."
     (unless (and (not (org-entry-is-done-p))
                  (not (org-in-archived-heading-p))
                  (or (and scheduled-time
-                          (org-time-less-p scheduled-time due-date))
+                          (time-less-p scheduled-time due-date))
                      (and deadline-time
-                          (org-time-less-p deadline-time due-date))
+                          (time-less-p deadline-time due-date))
                      (and entry-timestamp
-                          (org-time-less-p now entry-timestamp)
-                          (org-time-less-p entry-timestamp due-date))))
+                          (time-less-p now entry-timestamp)
+                          (time-less-p entry-timestamp due-date))))
       (point))))
 
 (defun dashboard-filter-agenda-by-todo ()
@@ -1448,8 +1541,8 @@ found for the strategy it uses nil predicate."
   (cl-case strategy
     (`priority-up '>)
     (`priority-down '<)
-    (`time-up 'org-time-less-p)
-    (`time-down (lambda (a b) (org-time-less-p b a)))
+    (`time-up 'time-less-p)
+    (`time-down (lambda (a b) (time-less-p b a)))
     (`todo-state-up '>)
     (`todo-state-down '<)))
 
@@ -1493,8 +1586,8 @@ to compare."
    (format "%s" el)))
 
 ;;
-;; Registers
-;;
+;;; Registers
+
 (defun dashboard-insert-registers (list-size)
   "Add the list of LIST-SIZE items of registers."
   (require 'register)

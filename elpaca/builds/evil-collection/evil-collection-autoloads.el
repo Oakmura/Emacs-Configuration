@@ -395,6 +395,13 @@ Set up `evil' bindings for `doc-view'.")
 (register-definition-prefixes "modes/docker/evil-collection-docker" '("evil-collection-docker-"))
 
 
+;;; Generated autoloads from modes/eat/evil-collection-eat.el
+
+(autoload 'evil-collection-eat-setup "modes/eat/evil-collection-eat" "\
+Set up `evil' bindings for `eat'.")
+(register-definition-prefixes "modes/eat/evil-collection-eat" '("evil-collection-eat-"))
+
+
 ;;; Generated autoloads from modes/ebib/evil-collection-ebib.el
 
 (autoload 'evil-collection-ebib-setup "modes/ebib/evil-collection-ebib" "\
@@ -770,6 +777,11 @@ Set up `evil' bindings for `js2-mode'.")
 (register-definition-prefixes "modes/js2-mode/evil-collection-js2-mode" '("evil-collection-js2-set-evil-shift-width"))
 
 
+;;; Generated autoloads from modes/kmacro/evil-collection-kmacro.el
+
+(register-definition-prefixes "modes/kmacro/evil-collection-kmacro" '("evil-collection-kmacro-"))
+
+
 ;;; Generated autoloads from modes/kotlin-mode/evil-collection-kotlin-mode.el
 
 (autoload 'evil-collection-kotlin-mode-setup "modes/kotlin-mode/evil-collection-kotlin-mode" "\
@@ -837,9 +849,9 @@ Set up `evil' bindings for `macrostep'.")
 
 (autoload 'evil-collection-magit-init "modes/magit/evil-collection-magit" "\
 This function completes the setup of evil-collection-magit. It is called
-automatically when evil-collection-magit-setup is called.. The only reason to use
-this function is if you've called `evil-collection-magit-revert' and wish to
-go back to evil-collection-magit behavior." t)
+automatically when evil-collection-magit-setup is called.. The only reason to
+use this function is if you've called `evil-collection-magit-revert' and wish
+to go back to evil-collection-magit behavior." t)
 (autoload 'evil-collection-magit-revert "modes/magit/evil-collection-magit" "\
 Revert changes by evil-collection-magit that affect default evil+magit behavior." t)
 (autoload 'evil-collection-magit-setup "modes/magit/evil-collection-magit" "\
@@ -899,6 +911,13 @@ Setup up `evil' bindings for `mpc-mode'.")
 (autoload 'evil-collection-mpdel-setup "modes/mpdel/evil-collection-mpdel" "\
 Set up `evil' bindings for `mpdel'.")
 (register-definition-prefixes "modes/mpdel/evil-collection-mpdel" '("evil-collection-mpdel-m"))
+
+
+;;; Generated autoloads from modes/mpdired/evil-collection-mpdired.el
+
+(autoload 'evil-collection-mpdired-setup "modes/mpdired/evil-collection-mpdired" "\
+Set up `evil' bindings for `mpdired'.")
+(register-definition-prefixes "modes/mpdired/evil-collection-mpdired" '("evil-collection-mpdired-m"))
 
 
 ;;; Generated autoloads from modes/mu4e/evil-collection-mu4e-1.8.el

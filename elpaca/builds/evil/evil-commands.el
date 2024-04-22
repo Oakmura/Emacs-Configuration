@@ -108,29 +108,49 @@ of the line or the buffer; just return nil."
         (unless (or (evil-visual-state-p) (evil-operator-state-p))
           (evil-adjust-cursor))))))
 
+(defvar evil--visual-eol-anchored nil
+  "Non nil if the cursor should be anchored at the end of the visual line.
+Only reliably usable via `evil-visual-eol-anchored-p'.")
+
+(defun evil-visual-eol-anchored-p ()
+  "Return non nil if the cursor should be anchored at the end of the visual line."
+  (if (memq last-command '(next-line previous-line evil-end-of-visual-line))
+      evil--visual-eol-anchored
+    (setq evil--visual-eol-anchored nil)))
+
 (evil-define-motion evil-next-line (count)
   "Move the cursor COUNT lines down."
   :type line
   (let (line-move-visual)
+    (unless (memq last-command '(next-line previous-line evil-end-of-visual-line))
+      (setq evil--visual-eol-anchored nil))
     (evil-line-move (or count 1))))
 
 (evil-define-motion evil-previous-line (count)
   "Move the cursor COUNT lines up."
   :type line
   (let (line-move-visual)
+    (unless (memq last-command '(next-line previous-line evil-end-of-visual-line))
+      (setq evil--visual-eol-anchored nil))
     (evil-line-move (- (or count 1)))))
 
 (evil-define-motion evil-next-visual-line (count)
   "Move the cursor COUNT screen lines down."
   :type exclusive
   (let ((line-move-visual t))
-    (evil-line-move (or count 1))))
+    (when (eq most-positive-fixnum temporary-goal-column)
+      (setq temporary-goal-column (current-column))) ; Fix #1876
+    (evil-line-move (or count 1))
+    (when (evil-visual-eol-anchored-p) (evil-end-of-visual-line))))
 
 (evil-define-motion evil-previous-visual-line (count)
   "Move the cursor COUNT screen lines up."
   :type exclusive
   (let ((line-move-visual t))
-    (evil-line-move (- (or count 1)))))
+    (when (eq most-positive-fixnum temporary-goal-column)
+      (setq temporary-goal-column (current-column))) ; Fix #1876
+    (evil-line-move (- (or count 1)))
+    (when (evil-visual-eol-anchored-p) (evil-end-of-visual-line))))
 
 ;; used for repeated commands like "dd"
 (evil-define-motion evil-line (count)
@@ -168,6 +188,7 @@ If COUNT is given, move COUNT - 1 lines downward first."
   (move-end-of-line count)
   (when evil-track-eol
     (setq temporary-goal-column most-positive-fixnum
+          evil--visual-eol-anchored t
           this-command 'next-line))
   (if (evil-visual-state-p)
       (when evil-v$-excludes-newline
@@ -187,6 +208,7 @@ If COUNT is given, move COUNT - 1 lines downward first."
   "Move the cursor to the last character of the current screen line.
 If COUNT is given, move COUNT - 1 screen lines downward first."
   :type inclusive
+  (setq evil--visual-eol-anchored t)
   (end-of-visual-line count))
 
 (evil-define-motion evil-end-of-line-or-visual-line (count)
@@ -1436,23 +1458,37 @@ the left edge."
       (evil-yank-characters beg end register yank-handler)
       (goto-char beg)))))
 
+(defun evil-expand-line-for-line-based-operators (beg end type)
+  "Expand to line when in visual mode possibly changing BEG, END and TYPE.
+Avoids double expansion for line based commands like 'V' or 'D'."
+  (when (evil-visual-state-p)
+    (unless (memq type '(line block screen-line))
+      ;; Subtract 1 from end to avoid expanding to the next line
+      ;; when \n is part of the visually selected region.
+      ;; If removed (evil-expand beg end 'line)
+      ;; will expand to the end of the next line instead of the current
+      ;; line which will cause line expanding commands like 'Y' to
+      ;; misbehave when used in visual state.
+      (when (eq ?\n (char-before end))
+        (cl-decf end))
+      (let ((range (evil-expand beg end (if (and evil-respect-visual-line-mode
+                                                 visual-line-mode)
+                                            'screen-line
+                                          'line))))
+        (setq beg (evil-range-beginning range)
+              end (evil-range-end range)
+              type (evil-type range))))
+    (evil-exit-visual-state))
+  (list beg end type))
+
 (evil-define-operator evil-yank-line (beg end type register)
   "Save whole lines into the kill-ring."
   :motion evil-line-or-visual-line
   :move-point nil
   (interactive "<R><x>")
-  (when (evil-visual-state-p)
-    (unless (memq type '(line block screen-line))
-      (let ((range (evil-expand beg end
-                                (if (and evil-respect-visual-line-mode
-                                         visual-line-mode)
-                                    'screen-line
-                                  'line))))
-        (setq beg (evil-range-beginning range)
-              end (evil-range-end range)
-              type (evil-type range))))
-    (evil-exit-visual-state))
-  (evil-yank beg end type register))
+  (cl-destructuring-bind
+      (beg end type) (evil-expand-line-for-line-based-operators beg end type)
+    (evil-yank beg end type register)))
 
 (evil-define-operator evil-delete (beg end type register yank-handler)
   "Delete text from BEG to END with TYPE.
@@ -1496,30 +1532,33 @@ Save in REGISTER or in the kill-ring with YANK-HANDLER."
                ;; Special exceptions to ever saving column:
                (not (memq evil-this-motion '(evil-forward-word-begin
                                              evil-forward-WORD-begin))))
-      (move-to-column evil-operator-start-col))))
+      (move-to-column (if (and (eq most-positive-fixnum temporary-goal-column)
+                               (memq last-command '(next-line previous-line)))
+                          temporary-goal-column
+                        evil-operator-start-col)))))
 
 (evil-define-operator evil-delete-line (beg end type register yank-handler)
   "Delete to end of line."
   :motion evil-end-of-line-or-visual-line
   (interactive "<R><x>")
-  ;; Act linewise in Visual state
-  (when (and (evil-visual-state-p) (eq type 'inclusive))
-    (let ((range (evil-expand
-                  beg end
-                  (if (and evil-respect-visual-line-mode visual-line-mode)
-                      'screen-line 'line))))
-      (setq beg (car range)
-            end (cadr range)
-            type (evil-type range))))
-  (if (eq type 'block)
-      ;; Equivalent to $d, i.e., we use the block-to-eol selection and
-      ;; call `evil-delete'. In this case we fake the call to
-      ;; `evil-end-of-line' by setting `temporary-goal-column' and
-      ;; `last-command' appropriately as `evil-end-of-line' would do.
-      (let ((temporary-goal-column most-positive-fixnum)
-            (last-command 'next-line))
-        (evil-delete beg end 'block register yank-handler))
-    (evil-delete beg end type register yank-handler)))
+  (cl-destructuring-bind
+      (beg end type) (evil-expand-line-for-line-based-operators beg end type)
+    (if (eq type 'block)
+        ;; Equivalent to $d, i.e., we use the block-to-eol selection and
+        ;; call `evil-delete'. In this case we fake the call to
+        ;; `evil-end-of-line' by setting `temporary-goal-column' and
+        ;; `last-command' appropriately as `evil-end-of-line' would do.
+        (let ((temporary-goal-column most-positive-fixnum)
+              (last-command 'next-line))
+          (evil-delete beg end 'block register yank-handler))
+      (evil-delete beg end type register yank-handler)
+      (when (eq 'line type)
+        (evil-first-non-blank)
+        (when (and (not evil-start-of-line) evil-operator-start-col)
+          (move-to-column (if (and (eq most-positive-fixnum temporary-goal-column)
+                                   (memq last-command '(next-line previous-line)))
+                              temporary-goal-column
+                            evil-operator-start-col)))))))
 
 (evil-define-operator evil-delete-whole-line
   (beg end type register yank-handler)
@@ -1672,7 +1711,8 @@ of the block."
   :motion evil-end-of-line-or-visual-line
   (interactive "<R><x><y>")
   (if (and (evil-visual-state-p) (eq type 'inclusive))
-      (cl-destructuring-bind (beg end &rest) (evil-line-expand beg end)
+      (cl-destructuring-bind
+          (beg end _type) (evil-expand-line-for-line-based-operators beg end type)
         (evil-change-whole-line beg end register yank-handler))
     (evil-change beg end type register yank-handler #'evil-delete-line)))
 
@@ -1735,9 +1775,13 @@ Add (add-hook 'evil-local-mode-hook 'turn-on-undo-tree-mode) to your init file f
 (evil-define-command evil-undo (count)
   "Undo COUNT changes in buffer using `evil-undo-function'."
   :repeat abort
+  :jump t
   (interactive "*p")
   (evil--check-undo-system)
-  (funcall evil-undo-function count))
+  (let ((state-before evil-state))
+    (unless (eq 'normal state-before) (evil-normal-state))
+    (funcall evil-undo-function count)
+    (unless (eq 'normal state-before) (evil-change-state state-before))))
 
 (evil-define-command evil-redo (count)
   "Undo COUNT changes in buffer using `evil-redo-function'."
@@ -2122,7 +2166,7 @@ the current line."
   (interactive "<c>")
   (if (and (eq 'self-insert-command last-command)
            (eq ?0 (char-before)))
-      (progn (backward-delete-char 1)
+      (progn (delete-char -1)
              (evil-delete-indentation))
     (evil-shift-left (line-beginning-position) (line-beginning-position 2) count t)))
 
@@ -2659,17 +2703,22 @@ If SKIP-EMPTY-LINES is non-nil, the insertion will not be performed
 on lines on which the insertion point would be after the end of the
 lines.  This is the default behaviour for Visual-state insertion."
   (interactive
-   (list (prefix-numeric-value current-prefix-arg)
-         (and (evil-visual-state-p)
-              (memq (evil-visual-type) '(line block))
-              (save-excursion
-                (let ((m (mark)))
-                  ;; go to upper-left corner temporarily so
-                  ;; `count-lines' yields accurate results
-                  (evil-visual-rotate 'upper-left)
-                  (prog1 (count-lines evil-visual-beginning evil-visual-end)
-                    (set-mark m)))))
-         (evil-visual-state-p)))
+   (let ((lines+ 0))
+     (list (prefix-numeric-value current-prefix-arg)
+           (and (evil-visual-state-p)
+                (memq (evil-visual-type) '(line block))
+                (save-excursion
+                  (let ((m (mark)))
+                    (evil-visual-rotate 'lower-right)
+                    ;; count-lines misses an empty final line, so correct that
+                    (and (bolp) (eolp) (setq lines+ 1))
+                    ;; go to upper-left corner temporarily so
+                    ;; `count-lines' yields accurate results
+                    (evil-visual-rotate 'upper-left)
+                    (prog1 (+ (count-lines evil-visual-beginning evil-visual-end)
+                              lines+)
+                      (set-mark m)))))
+           (evil-visual-state-p))))
   (if (and (called-interactively-p 'any)
            (evil-visual-state-p))
       (cond
@@ -3735,7 +3784,7 @@ Signal an error if the file does not exist."
     (let ((completions (cons '(nil) evil-state-properties)))
       (when arg
         (cond
-         ((eq flag nil)
+         ((null flag)
           (try-completion arg completions predicate))
          ((eq flag t)
           (all-completions arg completions predicate))

@@ -1,45 +1,61 @@
-+TITLE: Oakmura's GNU Emacs Config
+#+TITLE: Oakmura's GNU Emacs Config
 #+AUTHOR: Oakmura
 #+DESCRIPTION: Oakmura's personal Emacs config.
 #+STARTUP: showeverything
 #+OPTIONS: toc:2
 
 * TABLE OF CONTENTS :toc:
+- [[#melpa][MELPA]]
 - [[#important-programs-to-load-first][IMPORTANT PROGRAMS TO LOAD FIRST]]
   - [[#adding-the-scripts-directory-to-path][Adding the scripts directory to path]]
   - [[#sourcing-the-scripts][Sourcing the scripts]]
-- [[#all-the-icons][ALL THE ICONS]]
-- [[#backup][BACKUP]]
+- [[#encodings][ENCODINGS]]
 - [[#company][COMPANY]]
+- [[#flycheck][FLYCHECK]]
+- [[#frame-manipulation][FRAME MANIPULATION]]
+  - [[#initial-frame-position-and-size][Initial frame position and size]]
+  - [[#move-frame][Move frame]]
+  - [[#enlargeshrink-frame][Enlarge/shrink frame]]
+- [[#all-the-icons][ALL THE ICONS]]
+  - [[#disable-beep][Disable beep]]
 - [[#dashboard][DASHBOARD]]
-- [[#diminish][DIMINISH]]
-- [[#evil][EVIL]]
+- [[#neotree][NEOTREE]]
 - [[#fonts][FONTS]]
   - [[#setting-the-font-face][Setting the Font Face]]
   - [[#zooming-inout][Zooming In/Out]]
-- [[#general-keybindings][GENERAL KEYBINDINGS]]
-- [[#minibuffer-escape][MINIBUFFER ESCAPE]]
-- [[#modeline][MODELINE]]
-- [[#neotree][NEOTREE]]
+- [[#theme][THEME]]
 - [[#org-mode][ORG MODE]]
   - [[#enabling-table-of-contents][Enabling Table of Contents]]
   - [[#enabling-org-bullets][Enabling Org Bullets]]
   - [[#diminish-org-indent-mode][Diminish Org Indent Mode]]
   - [[#org-level-headers][Org Level Headers]]
-  - [[#source-code-block-tag-expansion][Source Code Block Tag Expansion]]
-- [[#rainbow-delimiters][RAINBOW DELIMITERS]]
+- [[#lsp][LSP]]
+- [[#projectile][PROJECTILE]]
+- [[#minibuffer-escape][MINIBUFFER ESCAPE]]
 - [[#rainbow-mode][RAINBOW MODE]]
-- [[#sane-defaults][SANE DEFAULTS]]
-- [[#theme][THEME]]
-- [[#transparency][TRANSPARENCY]]
+- [[#rainbow-delimiters][RAINBOW DELIMITERS]]
 - [[#which-key][WHICH-KEY]]
+- [[#sane-defaults][SANE DEFAULTS]]
+  - [[#source-code-block-tag-expansion][Source Code Block Tag Expansion]]
+- [[#transparency][TRANSPARENCY]]
+  - [[#initial-transparency][Initial transparency]]
+- [[#general-keybindings][GENERAL KEYBINDINGS]]
+- [[#shells-and-terminals][SHELLS AND TERMINALS]]
+  - [[#eshell][Eshell]]
+- [[#pdf-tools][PDF-TOOLS]]
+- [[#backups][BACKUPS]]
 - [[#todo][TODO]]
-  - [[#backup-needs-to-be-fixed-to-work-properly-on-windows][BACKUP needs to be fixed to work properly on Windows]]
-  - [[#dired-dired-peep][Dired, Dired Peep]]
-  - [[#more-general-keybindings][More General keybindings]]
-  - [[#shell-integration][Shell integration]]
-  - [[#ivy][Ivy]]
-  - [[#language-supports][Language supports]]
+  - [[#most-important][Most Important]]
+- [[#tips][TIPS]]
+  - [[#internal-profiler][Internal profiler]]
+
+* MELPA
+Melpa is Emacs Lisp package archive. We can add this to package-archive list to get more packages.
+#+begin_src emacs-lisp
+(add-to-list 'package-archives
+	     '("melpa" . "https://melpa.org/packages/"))
+(package-initialize)
+#+end_src
 
 * IMPORTANT PROGRAMS TO LOAD FIRST
 To keep this =config.org= a reasonable length, I have moved a lot of code to individual scripts that will be sourced by this config.  These scripts are found in "~/.config/emacs/scripts" and do not contain any code that most people are likely to need to edit.
@@ -53,26 +69,23 @@ To keep this =config.org= a reasonable length, I have moved a lot of code to ind
 #+begin_src emacs-lisp
 (require 'elpaca-setup)  ;; The Elpaca Package Manager
 (require 'buffer-move)   ;; Buffer-move for better window management
-;;(require 'app-launchers) ;; Use emacs as a run launcher like dmenu (experimental)
+(require 'evil-setup) ;; The Evil mode
+(require 'frame-fns) ;; frame-cmds dependency
+(require 'frame-cmds) ;; Frame and Window commands
 #+end_src
 
-* ALL THE ICONS
-This is an icon set that can be used with dashboard, dired, ibuffer and other Emacs programs.
-  
+* ENCODINGS
 #+begin_src emacs-lisp
-(use-package all-the-icons
-  :ensure t
-  :if (display-graphic-p))
+;; (set-language-environment "UTF-8")
+(setq-default buffer-file-coding-system 'utf-8-unix)
 
-(use-package all-the-icons-dired
-  :hook (dired-mode . (lambda () (all-the-icons-dired-mode t))))
-#+end_src
-
-* BACKUP 
-By default, Emacs creates automatic backups of files in their original directories, such "file.el" and the backup "file.el~".  This leads to a lot of clutter, so let's tell Emacs to put all backups that it creates in the =TRASH= directory.
-
-#+begin_src emacs-lisp
-(setq backup-directory-alist '((".*" . "C:/$Recycle.Bin")))
+(set-terminal-coding-system 'utf-8)
+(set-language-environment 'utf-8)
+(set-keyboard-coding-system 'utf-8)
+(prefer-coding-system 'utf-8)
+(setq locale-coding-system 'utf-8)
+(set-default-coding-systems 'utf-8)
+(set-terminal-coding-system 'utf-8)
 #+end_src
 
 * COMPANY
@@ -81,7 +94,6 @@ By default, Emacs creates automatic backups of files in their original directori
 #+begin_src emacs-lisp
 (use-package company
   :defer 2
-  :diminish
   :custom
   (company-begin-commands '(self-insert-command))
   (company-idle-delay .1)
@@ -92,8 +104,67 @@ By default, Emacs creates automatic backups of files in their original directori
 
 (use-package company-box
   :after company
-  :diminish
   :hook (company-mode . company-box-mode))
+#+end_src
+
+* FLYCHECK
+#+begin_src emacs-lisp
+(use-package flycheck
+  :ensure t
+  :defer t
+  :init (global-flycheck-mode))
+#+end_src
+
+* FRAME MANIPULATION
+** Initial frame position and size
+#+begin_src emacs-lisp
+(setq default-frame-alist
+      '((top . 220) (left . 400)
+        (width . 220) (height . 60)))
+
+(setq initial-frame-alist '((top . 220) (left . 400)))
+#+end_src
+
+** Move frame
+#+begin_src emacs-lisp 
+(global-set-key (kbd "C-<left>") 'move-frame-left)
+(global-set-key (kbd "C-<up>") 'move-frame-up)
+(global-set-key (kbd "C-<right>") 'move-frame-right)
+(global-set-key (kbd "C-<down>") 'move-frame-down)
+#+end_src
+
+** Enlarge/shrink frame
+#+begin_src emacs-lisp
+(global-set-key (kbd "C-S-<right>") 'enlarge-frame-horizontally)
+(global-set-key (kbd "C-S-<down>") 'enlarge-frame)
+(global-set-key (kbd "C-S-<left>") 'shrink-frame-horizontally)
+(global-set-key (kbd "C-S-<up>") 'shrink-frame)
+
+;; override org commands
+(with-eval-after-load "org"
+  (define-key org-mode-map (kbd "C-S-<right>") #'enlarge-frame-horizontally)
+  (define-key org-mode-map (kbd "C-S-<down>") #'enlarge-frame)
+  (define-key org-mode-map (kbd "C-S-<left>") #'shrink-frame-horizontally)
+  (define-key org-mode-map (kbd "C-S-<up>") #'shrink-frame))
+
+#+end_src
+
+* ALL THE ICONS
+This is an icon set that can be used with dashboard, dired, ibuffer and other Emacs programs. On Windows, we need to manually download and install fonts. But, it does not look as great as in Linux
+#+begin_src emacs-lisp
+
+(use-package all-the-icons
+  :ensure t
+  :if (display-graphic-p))
+
+;; (use-package all-the-icons-dired
+;;   :hook (dired-mode . (lambda () (all-the-icons-dired-mode t))))
+
+#+end_src
+
+** Disable beep
+#+begin_src emacs-lisp
+  (setq visible-bell 1)
 #+end_src
 
 * DASHBOARD
@@ -106,10 +177,11 @@ Emacs Dashboard is an extensible startup screen showing you recent files, bookma
   (setq initial-buffer-choice 'dashboard-open)
   (setq dashboard-set-heading-icons t)
   (setq dashboard-set-file-icons t)
-  (setq dashboard-banner-logo-title "Emacs Is More Than A Text Editor!")
-  (setq dashboard-startup-banner 'logo) ;; use standard emacs logo as banner
-  ;; (setq dashboard-startup-banner "~/.config/emacs/images/dtmacs-logo.png")  ;; use custom image as banner
-  (setq dashboard-center-content nil) ;; set to 't' for centered content
+  (setq dashboard-banner-logo-title "Oakmura Emacs")
+  ;;(setq dashboard-startup-banner 'logo) ;; use standard emacs logo as banner
+  (setq dashboard-startup-banner "~/.config/emacs/images/minecraft-dolphin.gif") ;; custom image
+  ;;(setq dashboard-startup-banner "~/.config/emacs/images/bear-resize.gif") ;; custom image
+  (setq dashboard-center-content t) ;; set to 't' for centered content
   (setq dashboard-items '((recents . 5)
                           (agenda . 5 )
                           (bookmarks . 3)
@@ -123,176 +195,15 @@ Emacs Dashboard is an extensible startup screen showing you recent files, bookma
 
 #+end_src
 
-* DIMINISH
-This package implements hiding or abbreviation of the modeline displays (lighters) of minor-modes.  With this package installed, you can add ':diminish' to any use-package block to hide that particular mode in the modeline.
-
-#+begin_src emacs-lisp
-(use-package diminish)
-#+end_src
-
-* EVIL
-[[https://github.com/emacs-evil/evil][Evil]] is an extensible vi/vim layer for Emacs.  Because...let's face it.  The Vim keybindings are just plain better.
-
-#+begin_src emacs-lisp
-;; Expands to: (elpaca evil (use-package evil :demand t))
-(use-package evil
-    :init      ;; tweak evil's configuration before loading it
-    (setq evil-want-integration t  ;; This is optional since it's already set to t by default.
-          evil-want-keybinding nil
-          evil-vsplit-window-right t
-          evil-split-window-below t
-          evil-want-C-u-scroll t
-          evil-undo-system 'undo-redo)  ;; Adds vim-like C-r redo functionality
-    (evil-mode))
-
-(use-package evil-collection
-  :after evil
-  :config
-  ;; Do not uncomment this unless you want to specify each and every mode
-  ;; that evil-collection should works with.  The following line is here 
-  ;; for documentation purposes in case you need it.  
-  ;; (setq evil-collection-mode-list '(calendar dashboard dired ediff info magit ibuffer))
-  (add-to-list 'evil-collection-mode-list 'help) ;; evilify help mode
-  (evil-collection-init))
-
-(use-package evil-tutor)
-
-;; Using RETURN to follow links in Org/Evil 
-;; Unmap keys in 'evil-maps if not done, (setq org-return-follows-link t) will not work
-(with-eval-after-load 'evil-maps
-  (define-key evil-motion-state-map (kbd "SPC") nil)
-  (define-key evil-motion-state-map (kbd "RET") nil)
-  (define-key evil-motion-state-map (kbd "TAB") nil))
-;; Setting RETURN key in org-mode to follow links
-  (setq org-return-follows-link  t)
-#+end_src
-
-* FONTS
-Defining the various fonts that Emacs will use.
-
-** Setting the Font Face
-#+begin_src emacs-lisp
-(set-face-attribute 'default nil
-  :font "JetBrains Mono"
-  :height 110
-  :weight 'medium)
-(set-face-attribute 'variable-pitch nil
-  :font "Ubuntu"
-  :height 110
-  :weight 'medium)
-(set-face-attribute 'fixed-pitch nil
-  :font "JetBrains Mono"
-  :height 110
-  :weight 'medium)
-;; Makes commented text and keywords italics.
-;; This is working in emacsclient but not emacs.
-;; Your font must have an italic face available.
-(set-face-attribute 'font-lock-comment-face nil
-  :slant 'italic)
-(set-face-attribute 'font-lock-keyword-face nil
-  :slant 'italic)
-
-;; This sets the default font on all graphical frames created after restarting Emacs.
-;; Does the same thing as 'set-face-attribute default' above, but emacsclient fonts
-;; are not right unless I also add this method of setting the default font.
-(add-to-list 'default-frame-alist '(font . "JetBrains Mono-11"))
-
-;; Uncomment the following line if line spacing needs adjusting.
-(setq-default line-spacing 0.12)
-#+end_src
-
-** Zooming In/Out
-You can use the bindings CTRL plus =/- for zooming in/out.  You can also use CTRL plus the mouse wheel for zooming in/out.
-
-#+begin_src emacs-lisp
-(setq text-scale-mode-step 1.1)
-(global-set-key (kbd "C-=") 'text-scale-increase)
-(global-set-key (kbd "C--") 'text-scale-decrease)
-(global-set-key (kbd "<C-wheel-up>") 'text-scale-increase)
-(global-set-key (kbd "<C-wheel-down>") 'text-scale-decrease)
-#+end_src
-
-* GENERAL KEYBINDINGS
-#+begin_src emacs-lisp
-    (use-package general
-    :config
-    (general-evil-setup)
-
-    ;; set up 'SPC' as the global leader key
-    (general-create-definer oakm/leader-keys
-      :states '(normal insert visual emacs)
-      :keymaps 'override
-      :prefix "SPC" ;; set leader
-      :global-prefix "M-SPC") ;; access leader in insert mode
-
-    (oakm/leader-keys
-      "." '(find-file :wk "Find file")
-      "f c" '((lambda () (interactive) (find-file "~/.config/emacs/config.org")) :wk "Edit emacs config")
-      "TAB TAB" '(comment-line :wk "Comment lines"))
-
-    (oakm/leader-keys
-      "b" '(:ignore t :wk "buffer")
-      "b b" '(switch-to-buffer :wk "Switch buffer")
-      "b i" '(ibuffer :wk "Ibuffer")
-      "b k" '(kill-this-buffer :wk "Kill this buffer")
-      "b n" '(next-buffer :wk "Next buffer")
-      "b p" '(previous-buffer :wk "Previous buffer")
-      "b r" '(revert-buffer :wk "Reload buffer"))
-
-    (oakm/leader-keys
-      "e" '(:ignore t :wk "Evaluate")    
-      "e b" '(eval-buffer :wk "Evaluate elisp in buffer")
-      "e d" '(eval-defun :wk "Evaluate defun containing or after point")
-      "e e" '(eval-expression :wk "Evaluate and elisp expression")
-      "e l" '(eval-last-sexp :wk "Evaluate elisp expression before point")
-      "e r" '(eval-region :wk "Evaluate elisp in region")) 
-
-     (oakm/leader-keys
-      "h" '(:ignore t :wk "Help")
-      "h f" '(describe-function :wk "Describe function")
-      "h v" '(describe-variable :wk "Describe variable")
-    "h r r" '((lambda () (interactive)
-                (load-file "~/.config/emacs/init.el")
-                (ignore (elpaca-process-queues)))
-              :wk "Reload emacs config")
-      )
-
-     (oakm/leader-keys
-      "t" '(:ignore t :wk "Toggle")
-      "t l" '(display-line-numbers-mode :wk "Toggle line numbers")
-      "t t" '(visual-line-mode :wk "Toggle truncated lines"))
-  )
-#+end_src
-
-* MINIBUFFER ESCAPE
-By default, Emacs requires you to hit ESC three times to escape quit the minibuffer.  
-
-#+begin_src emacs-lisp
-(global-set-key [escape] 'keyboard-escape-quit)
-#+end_src
-
-* MODELINE
-The modeline is the bottom status bar that appears in Emacs windows.  While you can create your own custom modeline, why go to the trouble when Doom Emacs already has a nice modeline package available.  For more information on what is available to configure in the Doom modeline, check out: [[https://github.com/seagle0128/doom-modeline][Doom Modeline]]
-
-#+begin_src emacs-lisp
-(use-package doom-modeline
-  :ensure t
-  :init (doom-modeline-mode 1)
-  :config
-  (setq doom-modeline-height 5      ;; sets modeline height
-        doom-modeline-bar-width 5))    ;; sets right bar width
-
-#+end_src
-
 * NEOTREE
 Neotree is a file tree viewer.  When you open neotree, it jumps to the current file thanks to neo-smart-open.  The neo-window-fixed-size setting makes the neotree width be adjustable.  NeoTree provides following themes: classic, ascii, arrow, icons, and nerd.  Theme can be config'd by setting "two" themes for neo-theme: one for the GUI and one for the terminal.  I like to use 'SPC t' for 'toggle' keybindings, so I have used 'SPC t n' for toggle-neotree.
 
-| COMMAND        | DESCRIPTION               | KEYBINDING |
-|----------------+---------------------------+------------|
+| COMMAND        | DESCRIPTION                 | KEYBINDING |
+|----------------+-----------------------------+------------|
 | neotree-toggle | /Toggle neotree/            | SPC t n    |
 | neotree- dir   | /Open directory in neotree/ | SPC d n    |
 
-#+BEGIN_SRC emacs-lisp
+#+begin_src emacs-lisp
 (use-package neotree
   :config
   (setq neo-smart-open t
@@ -308,6 +219,81 @@ Neotree is a file tree viewer.  When you open neotree, it jumps to the current f
                  (setq word-wrap nil)
                  (make-local-variable 'auto-hscroll-mode)
                  (setq auto-hscroll-mode nil)))))
+#+end_src
+
+* FONTS
+Defining the various fonts that Emacs will use.
+
+** Setting the Font Face
+#+begin_src emacs-lisp
+  (set-face-attribute 'default nil
+    :font "JetBrains Mono"
+    ;;:font "HackNerdFont-Regular"
+    :height 110
+    :weight 'medium)
+  (set-face-attribute 'variable-pitch nil
+    :font "Ubuntu"
+    ;;:font "HackNerdFont-Regular"
+    :height 110
+    :weight 'medium)
+  (set-face-attribute 'fixed-pitch nil
+    :font "JetBrains Mono"
+    ;;:font "HackNerdFont-Regular"
+    :height 110
+    :weight 'medium)
+  ;; Makes commented text and keywords italics.
+  ;; This is working in emacsclient but not emacs.
+  ;; Your font must have an italic face available.
+  (set-face-attribute 'font-lock-comment-face nil
+    :slant 'italic)
+  (set-face-attribute 'font-lock-keyword-face nil
+    :slant 'italic)
+
+  ;; This sets the default font on all graphical frames created after restarting Emacs.
+  ;; Does the same thing as 'set-face-attribute default' above, but emacsclient fonts
+  ;; are not right unless I also add this method of setting the default font.
+  (add-to-list 'default-frame-alist '(font . "JetBrains Mono-11"))
+  ;; (add-to-list 'default-frame-alist '(font . "HackNerdFont-Regular"))
+
+  ;; Uncomment the following line if line spacing needs adjusting.
+  (setq-default line-spacing 0.12)
+#+end_src
+
+** Zooming In/Out
+You can use the bindings CTRL plus =/- for zooming in/out.  You can also use CTRL plus the mouse wheel for zooming in/out.
+
+#+begin_src emacs-lisp
+(setq text-scale-mode-step 1.1)
+(global-set-key (kbd "C-=") 'text-scale-increase)
+(global-set-key (kbd "C--") 'text-scale-decrease)
+(global-set-key (kbd "<C-wheel-up>") 'text-scale-increase)
+(global-set-key (kbd "<C-wheel-down>") 'text-scale-decrease)
+#+end_src
+
+* THEME
+The first line below designates the directory where will place all of our custom-made themes. You can create your own Emacs themes with the help of the [[https://emacsfodder.github.io/emacs-theme-editor/][Emacs Theme Editor]].  I am also installing =doom-themes= because it contains a huge collection of themes.  M-x load-theme will list all of the themes available.
+
+#+begin_src emacs-lisp
+(add-to-list 'custom-theme-load-path "~/.config/emacs/themes/")
+;; (load-theme 'magonyx t)
+
+(use-package doom-themes
+  :config
+  (setq doom-themes-enable-bold t    ; if nil, bold is universally disabled
+        doom-themes-enable-italic t) ; if nil, italics is universally disabled
+  ;; Sets the default theme to load!!! 
+  ;; (load-theme 'doom-one t)
+  ;; Enable custom neotree theme (all-the-icons must be installed!)
+  (doom-themes-neotree-config)
+  ;; Corrects (and improves) org-mode's native fontification.
+  (doom-themes-org-config))
+#+end_src
+
+#+begin_src emacs-lisp
+(use-package gruvbox-theme
+   :config
+   (load-theme 'gruvbox-dark-soft t)
+)
 #+end_src
 
 * ORG MODE
@@ -347,32 +333,31 @@ Removes "Ind" from showing in the modeline.
    '(org-level-7 ((t (:inherit outline-5 :height 1.1)))))
 #+end_src
 
-** Source Code Block Tag Expansion
-Org-tempo is not a separate package but a module within org that can be enabled.  Org-tempo allows for '<s' followed by TAB to expand to a begin_src tag.  Other expansions available include:
+* LSP
+Language Server Protocol 
+#+begin_src emacs-lisp
+(use-package lsp-mode
+  :commands (lsp lsp-deferred)
+  :config
+  (lsp-enable-which-key-integration t))
 
-| Typing the below + TAB | Expands to ...                        |
-|------------------------+---------------------------------------|
-| <a                     | '#+BEGIN_EXPORT ascii' '#+END_EXPORT  |
-| <c                     | '#+BEGIN_CENTER' '#+END_CENTER'       |
-| <C                     | '#+BEGIN_COMMENT' '#+END_COMMENT'     |
-| <e                     | '#+BEGIN_EXAMPLE' '#+END_EXAMPLE'     |
-| <E                     | '#+BEGIN_EXPORT' '#+END_EXPORT'       |
-| <h                     | '#+BEGIN_EXPORT html' '#+END_EXPORT'  |
-| <l                     | '#+BEGIN_EXPORT latex' '#+END_EXPORT' |
-| <q                     | '#+BEGIN_QUOTE' '#+END_QUOTE'         |
-| <s                     | '#+BEGIN_SRC' '#+END_SRC'             |
-| <v                     | '#+BEGIN_VERSE' '#+END_VERSE'         |
-
-#+begin_src emacs-lisp 
-(require 'org-tempo)
+(require 'lsp-mode)
+(add-hook 'prog-mode-hook #'lsp)
 #+end_src
-* RAINBOW DELIMITERS
-Adding rainbow coloring to parentheses.
+
+* PROJECTILE
+[[https://github.com/bbatsov/projectile][Projectile]] is a project interaction library for Emacs.
+#+begin_src emacs-lisp
+(use-package projectile
+  :config
+  (projectile-mode 1))
+#+end_src
+
+* MINIBUFFER ESCAPE
+By default, Emacs requires you to hit ESC three times to escape quit the minibuffer.  
 
 #+begin_src emacs-lisp
-(use-package rainbow-delimiters
-  :hook ((emacs-lisp-mode . rainbow-delimiters-mode)
-         (clojure-mode . rainbow-delimiters-mode)))
+(global-set-key [escape] 'keyboard-escape-quit)
 #+end_src
 
 * RAINBOW MODE
@@ -384,51 +369,12 @@ Display the actual color as a background for any hex color value (ex. #FFFFFF). 
   :hook org-mode prog-mode)
 #+end_src
 
-* SANE DEFAULTS
-The following settings are simple modes that are enabled (or disabled) so that Emacs functions more like you would expect a proper editor/IDE to function.
-
+* RAINBOW DELIMITERS
+Adding rainbow coloring to parentheses.
 #+begin_src emacs-lisp
-(delete-selection-mode 1)    ;; You can select text and delete it by typing.
-(electric-indent-mode -1)    ;; Turn off the weird indenting that Emacs does by default.
-(electric-pair-mode 1)       ;; Turns on automatic parens pairing
-;; The following prevents <> from auto-pairing when electric-pair-mode is on.
-;; Otherwise, org-tempo is broken when you try to <s TAB...
-(add-hook 'org-mode-hook (lambda ()
-           (setq-local electric-pair-inhibit-predicate
-                   `(lambda (c)
-                  (if (char-equal c ?<) t (,electric-pair-inhibit-predicate c))))))
-(global-auto-revert-mode t)  ;; Automatically show changes if the file has changed
-(global-display-line-numbers-mode 1) ;; Display line numbers
-(global-visual-line-mode t)  ;; Enable truncated lines
-(menu-bar-mode -1)           ;; Disable the menu bar 
-(scroll-bar-mode -1)         ;; Disable the scroll bar
-(tool-bar-mode -1)           ;; Disable the tool bar
-(setq org-edit-src-content-indentation 0) ;; Set src block automatic indent to 0 instead of 2.
-#+end_src
-
-* THEME
-The first line below designates the directory where will place all of our custom-made themes, which I have created only one (dtmacs).  You can create your own Emacs themes with the help of the [[https://emacsfodder.github.io/emacs-theme-editor/][Emacs Theme Editor]].  I am also installing =doom-themes= because it contains a huge collection of themes.  M-x load-theme will list all of the themes available.
-
-#+begin_src emacs-lisp
-(add-to-list 'custom-theme-load-path "~/.config/emacs/themes/")
-
-(use-package doom-themes
-  :config
-  (setq doom-themes-enable-bold t    ; if nil, bold is universally disabled
-        doom-themes-enable-italic t) ; if nil, italics is universally disabled
-  ;; Sets the default theme to load!!! 
-  (load-theme 'doom-one t)
-  ;; Enable custom neotree theme (all-the-icons must be installed!)
-  (doom-themes-neotree-config)
-  ;; Corrects (and improves) org-mode's native fontification.
-  (doom-themes-org-config))
-#+end_src
-
-* TRANSPARENCY
-With Emacs version 29, true transparency has been added.  I have turned transparency off by setting the alpha to '100'.  If you want some slight transparency, try setting alpha to '90'.  Of course, if you set alpha to '0', the background of Emacs would completely transparent.
-
-#+begin_src emacs-lisp
-(add-to-list 'default-frame-alist '(alpha-background . 100)) ; For all new frames henceforth
+(use-package rainbow-delimiters
+  :hook ((emacs-lisp-mode . rainbow-delimiters-mode)
+         (clojure-mode . rainbow-delimiters-mode)))
 #+end_src
 
 * WHICH-KEY
@@ -453,10 +399,258 @@ With Emacs version 29, true transparency has been added.  I have turned transpar
 	  which-key-separator " - " ))
 #+end_src
 
+* SANE DEFAULTS
+The following settings are simple modes that are enabled (or disabled) so that Emacs functions more like you would expect a proper editor/IDE to function.
+
+#+begin_src emacs-lisp
+;;(delete-selection-mode 1)    ;; You can select text and delete it by typing.
+(electric-indent-mode -1)    ;; Turn off the weird indenting that Emacs does by default.
+(electric-pair-mode 1)       ;; Turns on automatic parens pairing
+;; The following prevents <> from auto-pairing when electric-pair-mode is on.
+;; Otherwise, org-tempo is broken when you try to <s TAB...
+(add-hook 'org-mode-hook (lambda ()
+           (setq-local electric-pair-inhibit-predicate
+                   `(lambda (c)
+                  (if (char-equal c ?<) t (,electric-pair-inhibit-predicate c))))))
+(global-auto-revert-mode t)  ;; Automatically show changes if the file has changed
+(global-display-line-numbers-mode 1) ;; Display line numbers
+(global-visual-line-mode t)  ;; Enable truncated lines
+(global-hl-line-mode t) ;; highlight current line
+(menu-bar-mode -1)           ;; Disable the menu bar 
+(scroll-bar-mode -1)         ;; Disable the scroll bar
+(tool-bar-mode -1)           ;; Disable the tool bar
+(setq org-edit-src-content-indentation 0) ;; Set src block automatic indent to 0 instead of 2.
+(setq scroll-step 1)         ;; Automatic scroll step near margin
+(setq scroll-margin 10)
+(setq scroll-conservatively 9999) ;; Disable screen jump near margin
+#+end_src
+
+** Source Code Block Tag Expansion
+Org-tempo is not a separate package but a module within org that can be enabled.  Org-tempo allows for '<s' followed by TAB to expand to a begin_src tag.  Other expansions available include:
+
+| Typing the below + TAB | Expands to ...                        |
+|------------------------+---------------------------------------|
+| <a                     | '#+BEGIN_EXPORT ascii' '#+END_EXPORT  |
+| <c                     | '#+BEGIN_CENTER' '#+END_CENTER'       |
+| <C                     | '#+BEGIN_COMMENT' '#+END_COMMENT'     |
+| <e                     | '#+BEGIN_EXAMPLE' '#+END_EXAMPLE'     |
+| <E                     | '#+BEGIN_EXPORT' '#+END_EXPORT'       |
+| <h                     | '#+BEGIN_EXPORT html' '#+END_EXPORT'  |
+| <l                     | '#+BEGIN_EXPORT latex' '#+END_EXPORT' |
+| <q                     | '#+BEGIN_QUOTE' '#+END_QUOTE'         |
+| <s                     | '#+BEGIN_SRC' '#+END_SRC'             |
+| <v                     | '#+BEGIN_VERSE' '#+END_VERSE'         |
+
+#+begin_src emacs-lisp 
+(require 'org-tempo)
+#+end_src
+
+* TRANSPARENCY
+** Initial transparency
+#+begin_src emacs-lisp
+
+(defun transparent(alpha-level no-focus-alpha-level)
+"Let's you make the window transparent"
+(interactive "nAlpha level (0-100): \nnNo focus alpha level (0-100): ")
+(set-frame-parameter (selected-frame) 'alpha (list alpha-level no-focus-alpha-level))
+(add-to-list 'default-frame-alist `(alpha ,alpha-level)))
+
+(when window-system
+(set-frame-parameter (selected-frame) 'alpha (list 92 92))
+(add-to-list 'default-frame-alist `(alpha ,92)))
+
+#+end_src
+
+* GENERAL KEYBINDINGS
+#+begin_src emacs-lisp
+(use-package general
+  :config
+  (general-evil-setup)
+
+  ;; set up 'SPC' as the global leader key
+  (general-create-definer oakm/leader-keys
+    :states '(normal insert visual emacs)
+    :keymaps 'override
+    :prefix "SPC" ;; set leader
+    :global-prefix "M-SPC") ;; access leader in insert mode
+
+  (oakm/leader-keys
+    ;; "SPC" '(counsel-M-x :wk "Counsel M-x")
+    ;; "=" '(perspective-map :wk "Perspective") ;; Lists all the perspective keybindings
+    ;; "u" '(universal-argument :wk "Universal argument")
+    "." '(find-file :wk "Find file")
+    "TAB TAB" '(comment-line :wk "Comment lines"))
+
+  (oakm/leader-keys
+    ;; "SPC" '(counsel-M-x :wk "Counsel M-x")
+    ;; "f l" '(counsel-locate :wk "Locate a file")
+    ;; "f r" '(counsel-recentf :wk "Find recent files")
+    "f" '(:ignore t :wk "Files/Frames")    
+    "f c" '((lambda () (interactive) (find-file "~/.config/emacs/config.org")) :wk "Edit emacs config")
+    "f d" '((lambda () (interactive) (dired "C:/Users/jaero/OneDrive/바탕 화면")) :wk "Open user-desktop-directory in dired")
+    "f e" '((lambda () (interactive) (dired "~/.config/emacs/")) :wk "Open user-emacs-directory in dired")
+    "f t" '(transparent :wk "Set transparency"))
+
+  (oakm/leader-keys
+    "b" '(:ignore t :wk "buffer")
+    "b b" '(switch-to-buffer :wk "Switch buffer")
+    "b i" '(ibuffer :wk "Ibuffer")
+    "b k" '(kill-this-buffer :wk "Kill this buffer")
+    "b n" '(next-buffer :wk "Next buffer")
+    "b p" '(previous-buffer :wk "Previous buffer")
+    "b r" '(revert-buffer :wk "Reload buffer"))
+
+  (oakm/leader-keys
+    "e" '(:ignore t :wk "Evaluate/Eshell")    
+    "e b" '(eval-buffer :wk "Evaluate elisp in buffer")
+    "e d" '(eval-defun :wk "Evaluate defun containing or after point")
+    "e e" '(eval-expression :wk "Evaluate and elisp expression")
+    "e l" '(eval-last-sexp :wk "Evaluate elisp expression before point")
+    "e r" '(eval-region :wk "Evaluate elisp in region")
+    "e s" '(eshell :wk "Eshell"))
+
+  (oakm/leader-keys
+    "h" '(:ignore t :wk "Help")
+    "h f" '(describe-function :wk "Describe function")
+    "h v" '(describe-variable :wk "Describe variable")
+    "h t" '(load-theme :wk "Load theme")
+    "h r r" '((lambda () (interactive)
+		(load-file "~/.config/emacs/init.el")
+		(ignore (elpaca-process-queues)))
+              :wk "Reload emacs config")
+    )
+
+  (oakm/leader-keys
+    "t" '(:ignore t :wk "Toggle")
+    "t l" '(display-line-numbers-mode :wk "Toggle line numbers")
+    "t v" '(visual-line-mode :wk "Toggle truncated lines")
+    "t t" '(toggle-frame-fullscreen :wk "Toggle frame fullscreen")
+    "t n" '(neotree-toggle :wk "Toggle neotree"))
+
+  (oakm/leader-keys
+    "w" '(:ignore t :wk "Windows/Words")
+    ;; Window splits
+    "w c" '(evil-window-delete :wk "Close window")
+    "w n" '(evil-window-new :wk "New window")
+    "w s" '(evil-window-split :wk "Horizontal split window")
+    "w v" '(evil-window-vsplit :wk "Vertical split window")
+    ;; Window motions
+    "w h" '(evil-window-left :wk "Window left")
+    "w j" '(evil-window-down :wk "Window down")
+    "w k" '(evil-window-up :wk "Window up")
+    "w l" '(evil-window-right :wk "Window right")
+    "w w" '(evil-window-next :wk "Goto next window")
+    ;; Move Windows
+    "w H" '(buf-move-left :wk "Buffer move left")
+    "w J" '(buf-move-down :wk "Buffer move down")
+    "w K" '(buf-move-up :wk "Buffer move up")
+    "w L" '(buf-move-right :wk "Buffer move right")
+    ;; Words
+    "w U" '(upcase-word :wk "Upcase word")
+    "w u" '(downcase-word :wk "Downcase word")
+    "w =" '(count-words :wk "Count words/lines for buffer"))
+  )
+#+end_src
+
+* SHELLS AND TERMINALS
+
+** Eshell
+Eshell is an Emacs 'shell' that is written in Elisp.
+
+#+begin_src emacs-lisp
+(use-package eshell-syntax-highlighting
+  :after esh-mode
+  :config
+  (eshell-syntax-highlighting-global-mode +1))
+
+;; eshell-syntax-highlighting -- adds fish/zsh-like syntax highlighting.
+;; eshell-rc-script -- your profile for eshell; like a bashrc for eshell.
+;; eshell-aliases-file -- sets an aliases file for the eshell.
+
+(setq eshell-rc-script (concat user-emacs-directory "eshell/profile")
+      ;; eshell-aliases-file (concat user-emacs-directory "eshell/aliases")
+      ;; eshell-visual-commands'("bash" "fish" "htop" "ssh" "top" "zsh"))
+      eshell-history-size 5000
+      eshell-buffer-maximum-lines 5000
+      eshell-hist-ignoredups t
+      eshell-scroll-to-bottom-on-input t
+      eshell-destroy-buffer-when-process-dies t)
+#+end_src
+
+* PDF-TOOLS 
+#+begin_src emacs-lisp
+(use-package pdf-tools
+  :defer t
+  :init
+  (setenv "PATH" (concat "C:/msys64/mingw64/bin" ";" (getenv "PATH")))
+  (pdf-tools-install)
+  :mode "\\.pdf\\'"
+  :bind (:map pdf-view-mode-map
+              ("j" . pdf-view-next-line-or-next-page)
+              ("k" . pdf-view-previous-line-or-previous-page)
+              ("C-=" . pdf-view-enlarge)
+              ("C--" . pdf-view-shrink))
+
+  :custom
+  (pdf-info-epdfinfo-program "C:/msys64/mingw64/bin/epdfinfo.exe"))
+
+(add-hook 'pdf-view-mode-hook #'(lambda () (interactive) (display-line-numbers-mode -1)
+                                                         (blink-cursor-mode -1)
+                                                         (doom-modeline-mode -1)))
+#+end_src
+
+* BACKUPS
+Disable Emacs to create backup and lock files
+#+begin_src emacs-lisp
+
+;; if want to disable 
+;; (setq make-backup-files nil)
+;; (setq create-lockfiles nil)
+
+;; if want to enable, but do not want to see them
+(setq backup-directory-alist '(("." . "~/.config/emacs/backup"))) ;; temporary backup files. might have to use absolute path
+;;   backup-by-copying t    ; Don't delink hardlinks
+;;   version-control t      ; Use version numbers on backups
+;;   delete-old-versions t  ; Automatically delete excess backups
+;;   kept-new-versions 20   ; how many of the newest versions to keep
+;;   kept-old-versions 5    ; and how many of the old
+;;   )
+;; (setq lock-file-name-transforms `((".*" "~/.config/emacs/backup" t))) ;; lockfiles for simultaneous access to a file
+
+#+end_src
+
 * TODO
-** BACKUP needs to be fixed to work properly on Windows
-** Dired, Dired Peep
-** More General keybindings
-** Shell integration
-** Ivy
-** Language supports
+** Most Important
+*** Company
+*** Projectile
+*** Language supports
+*** Korean fonts are breaking
+*** Tab
+*** Initial frame position and size
+it is hard-coded
+
+*** Shell integration
+finding which shell to use for vterm
+
+*** More General keybindings
+*** Go back to previous and next cursor positions
+*** BACKUP (trash doesn't seem to work well)
+*** doom-modeline (try)
+*** Keybindings
+hot-reload -> load-file init.el
+revert-buffer (reload-buffer)
+*** Elfeed graphics programming such as Vulkan?
+*** GIT programs
+git-timemachine
+magit
+
+*** Perspective
+like tiling window manager, assigns perspective or workspace to groups of buffers.
+Configure so that I can see all buffers in all perspectives in ibuffer
+
+*** No Fringe (like git diff, highlights the changed lines on the frame left)
+*** clone-indirect-buffer-other-window SPC b c
+
+* TIPS
+** Internal profiler
+when feeling sluggish, can track CPU usage using profiler-start and profiler-report 

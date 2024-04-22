@@ -66,6 +66,7 @@
 ;;; Code:
 
 (require 'evil-collection)
+(require 'message)
 (require 'mu4e nil t)
 
 (defvar mu4e-mu-version)
@@ -82,7 +83,8 @@
                                         mu4e-headers-mode-map
                                         mu4e-view-mode-map
                                         mu4e-compose-mode-map
-                                        mu4e-search-minor-mode-map))
+                                        mu4e-search-minor-mode-map
+                                        mu4e-thread-mode-map))
 
   (defun evil-collection-mu4e-set-state ()
     "Set the appropriate initial state of all mu4e modes."
@@ -93,6 +95,33 @@
       (evil-set-initial-state mode 'normal))
     (evil-set-initial-state 'mu4e-compose-mode 'insert))
 
+  ;; These functions were removed from mu4e 1.12.0, specifically this commit:
+  ;; https://github.com/djcb/mu/commit/85bfe763362b95935a3967f6585e14b3f9890a70
+  ;; They were also re-added in version 1.12.2.
+  (when (and (version<= "1.12.0" mu4e-mu-version)
+             (version< mu4e-mu-version "1.12.2"))
+    (defun mu4e-compose-goto-top ()
+      "Go to the beginning of the message or buffer.
+Go to the beginning of the message or, if already there, go to the
+beginning of the buffer."
+      (interactive)
+      (let ((old-position (point)))
+        (message-goto-body)
+        (when (= (point) old-position)
+          (goto-char (point-min)))))
+
+    (defun mu4e-compose-goto-bottom ()
+      "Go to the end of the message or buffer.
+Go to the end of the message (before signature) or, if already there, go to the
+end of the buffer."
+      (interactive)
+      (let ((old-position (point))
+            (message-position (save-excursion (message-goto-body) (point))))
+        (goto-char (point-max))
+        (when (re-search-backward message-signature-separator message-position t)
+          (forward-line -1))
+        (when (= (point) old-position)
+          (goto-char (point-max))))))
 
   ;; When using org-mu4e, the above leads to an annoying behaviour, because
   ;; switching from message body to header activates mu4e-compose-mode, thus
@@ -107,8 +136,8 @@
     (evil-set-initial-state 'mu4e-compose-mode 'insert))
 
   (defun evil-collection-mu4e-mark-thread-as-read ()
-      (interactive)
-      (mu4e-headers-mark-thread nil '(read)))
+    (interactive)
+    (mu4e-headers-mark-thread nil '(read)))
 
   (defvar evil-collection-mu4e-mode-normal-map-bindings
     `((mu4e-main-mode-map
@@ -142,6 +171,8 @@
        "ce" mu4e-compose-edit
        "cf" mu4e-compose-forward
        "cr" mu4e-compose-reply
+       "cw" mu4e-compose-wide-reply
+       "W" mu4e-compose-wide-reply
        "o" mu4e-headers-change-sorting
        "j" mu4e-headers-next
        "k" mu4e-headers-prev
@@ -197,10 +228,16 @@
       (mu4e-search-minor-mode-map
        "J" mu4e-search-maildir)
 
+      (mu4e-thread-mode-map
+       [S-left] mu4e-thread-goto-root
+       [tab] mu4e-thread-fold-toggle
+       [C-tab] mu4e-thread-fold-toggle-goto-next
+       [backtab] mu4e-thread-fold-toggle-all)
+
       (mu4e-view-mode-map
        " " mu4e-view-scroll-up-or-next
-       [tab] shr-next-link
-       [backtab] shr-previous-link
+       [tab] forward-button
+       [backtab] backward-button
        "q" mu4e-view-quit
        "gx" mu4e-view-go-to-url
        "gX" mu4e-view-fetch-url
@@ -213,9 +250,10 @@
        "ce" mu4e-compose-edit
        "cf" mu4e-compose-forward
        "cr" mu4e-compose-reply
+       "cw" mu4e-compose-wide-reply
        "p" mu4e-view-save-attachments
        "O" mu4e-headers-change-sorting
-       "A" mu4e-view-mime-part-action ; Since 1.6, uses gnus view by default
+       "A" mu4e-view-mime-part-action   ; Since 1.6, uses gnus view by default
        "a" mu4e-view-action
        "J" mu4e~headers-jump-to-maildir
        "[[" mu4e-view-headers-prev-unread
@@ -226,7 +264,7 @@
        "\C-k" mu4e-view-headers-prev
        "x" mu4e-view-marked-execute
        "&" mu4e-view-mark-custom
-       "*" mu4e-view-mark-for-something   ; TODO: Don't override "*".
+       "*" mu4e-view-mark-for-something ; TODO: Don't override "*".
        "m" mu4e-view-mark-for-move
        "r" mu4e-view-mark-for-refile
        "D" mu4e-view-mark-for-delete
@@ -268,8 +306,8 @@
        "-" mu4e-headers-mark-for-unflag)
 
       (mu4e-compose-mode-map
-       "gg" 'mu4e-compose-goto-top
-       "G" 'mu4e-compose-goto-bottom))
+       "gg" mu4e-compose-goto-top
+       "G" mu4e-compose-goto-bottom))
     "All evil-mu4e bindings for evil visual mode.")
 
   (defun evil-collection-mu4e-set-bindings ()
@@ -297,6 +335,8 @@ If `mu4e-main-mode' is in `evil-state-motion-modes', initialization
 is already done earlier."
     (evil-collection-mu4e-set-state)
     (evil-collection-mu4e-set-bindings))
+
+  (add-hook 'mu4e-thread-mode-hook #'evil-normalize-keymaps)
 
   (provide 'evil-collection-mu4e))
 ;;; evil-collection-mu4e.el ends here

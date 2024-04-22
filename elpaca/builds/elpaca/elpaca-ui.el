@@ -9,24 +9,18 @@
 ;;; Code:
 (defgroup elpaca-ui nil "Elpaca's UI options." :group 'elpaca)
 
-(defface elpaca-ui-marked-delete  '((t (:inherit error)))
+(defface elpaca-ui-marked-delete '((t (:inherit error :inverse-video t)))
   "Face for packages marked for deletion.")
-(defface elpaca-ui-marked-install
-  '((((class color) (background light)) :weight bold :foreground "blue")
-    (((class color) (background dark))  :weight bold :foreground "#89CFF0"))
+(defface elpaca-ui-marked-install '((t (:inherit highlight :weight bold)))
   "Face for packages marked for installation.")
-(defface elpaca-ui-marked-rebuild
-  '((((class color) (background light)) :weight bold :foreground "purple")
-    (((class color) (background dark))  :weight bold :foreground "purple"))
+(defface elpaca-ui-marked-rebuild '((t (:inherit match :weight bold)))
   "Face for packages marked for rebuild.")
-(defface elpaca-ui-marked-fetch
-  '((((class color) (background light)) :weight bold :foreground "brown")
-    (((class color) (background dark))  :weight bold :foreground "#EFC88B"))
+(defface elpaca-ui-marked-fetch '((t (:inherit secondary-selection :weight bold)))
   "Face for packages marked for fetch.")
-(defface elpaca-ui-marked-merge
-  '((((class color) (background light)) :weight bold :foreground "#F28500")
-    (((class color) (background dark))  :weight bold :foreground "orange"))
-  "Face for packages marked for update.")
+(defface elpaca-ui-marked-merge '((t (:inherit region :weight bold :inverse-video t)))
+  "Face for packages marked for merging.")
+(defface elpaca-ui-marked-pull '((t (:inherit warning :inverse-video t)))
+  "Face for packages marked for pulling.")
 
 (defcustom elpaca-ui-row-limit 1000 "Max rows to print at once." :type 'integer)
 (defcustom elpaca-ui-default-query ".*" "Initial `elpaca-ui-mode' search query."
@@ -38,7 +32,9 @@
     (elpaca-try     :prefix "⚙️" :face elpaca-ui-marked-install)
     (elpaca-rebuild :prefix "♻️️" :face elpaca-ui-marked-rebuild)
     (elpaca-fetch   :prefix "‍🐕‍🦺" :face elpaca-ui-marked-fetch)
-    (elpaca-merge   :prefix "🤝" :face elpaca-ui-marked-merge :args (id prefix-arg)))
+    (elpaca-merge   :prefix "🤝" :face elpaca-ui-marked-merge :args (id prefix-arg))
+    (elpaca-pull    :prefix "⬆️" :face elpaca-ui-marked-pull :args (id prefix-arg)))
+
   "List of marks which can be applied to packages `elpaca-ui-mode' buffers.
 Each element is of the form (COMMAND :KEY VAL...).
 Accepted key val pairs are:
@@ -61,17 +57,17 @@ Accepted key val pairs are:
 
 (defun elpaca-ui--tag-orphan (_)
   "Return entires for packages not temporarlily installed or declared."
-  (mapcar (lambda (dir)
-            (let ((name (file-name-nondirectory (directory-file-name dir))))
-              (list (intern name) (vector (propertize name 'orphan-dir dir)
-                                          "orphan package" "n/a" "n/a" "n/a"))))
-          (cl-set-difference
-           (cl-remove-if-not
-            #'file-directory-p
-            (nthcdr 2 (mapcar #'file-name-as-directory
-                              (directory-files elpaca-repos-directory t))))
-           (mapcar (lambda (q) (elpaca<-repo-dir (cdr q))) (elpaca--queued))
-           :test #'equal)))
+  (let ((repos (nthcdr 2 ; Discard "." ".."
+                       (mapcar #'file-name-as-directory
+                               (directory-files elpaca-repos-directory t)))))
+    (mapcar (lambda (dir)
+              (let ((name (file-name-nondirectory (directory-file-name dir))))
+                (list (intern name) (vector (propertize name 'orphan-dir dir)
+                                            "orphan package" "n/a" "n/a" "n/a"))))
+            (cl-set-difference (cl-remove-if-not #'file-directory-p repos)
+                               (mapcar (lambda (q) (elpaca<-repo-dir (cdr q)))
+                                       (elpaca--queued))
+                               :test #'equal))))
 
 (defun elpaca-ui--tag-random (entries &optional limit)
   "Return LIMIT random ENTRIES."
@@ -142,36 +138,42 @@ exclamation point to it. e.g. !#installed."
   "Indicator shown in progress bar when `elpaca-wait' is polling."
   :type (or 'string 'nil))
 
-(define-obsolete-function-alias 'elpaca-ui-mark-install 'elpaca-ui-mark-try "0.0.0")
-(define-obsolete-function-alias 'elpaca-ui-mark-update 'elpaca-ui-mark-merge "0.0.0")
 ;;;; Variables:
 (defvar-local elpaca-ui--search-timer nil "Timer to debounce search input.")
 (defvar-local elpaca-ui--prev-entry-count nil "Number of previously recorded entries.")
+
+(defvar elpaca-ui-view-map
+  (let ((m (make-sparse-keymap)))
+    (define-key m (kbd "a") (elpaca-defsearch marked "#unique #marked"))
+    (define-key m (kbd "i") (elpaca-defsearch installed "#unique #installed"))
+    (define-key m (kbd "l") 'elpaca-log)
+    (define-key m (kbd "m") 'elpaca-manager)
+    (define-key m (kbd "o") (elpaca-defsearch orphaned "#unique #orphan"))
+    (define-key m (kbd "r") 'elpaca-ui-search-refresh)
+    (define-key m (kbd "t") (elpaca-defsearch tried "#unique #installed !#declared"))
+    m)
+  "Keymap for `elpaca-ui-mode' views.")
+
 (defvar elpaca-ui-mode-map
   (let ((m (make-sparse-keymap)))
     (define-key m (kbd "RET") 'elpaca-ui-info)
     (define-key m (kbd "!") 'elpaca-ui-send-input)
     (define-key m (kbd "+") 'elpaca-ui-show-hidden-rows)
-    (define-key m (kbd "I") (elpaca-defsearch installed "#unique #installed"))
-    (define-key m (kbd "M") (elpaca-defsearch marked   "#unique #marked"))
-    (define-key m (kbd "O") (elpaca-defsearch orphaned "#unique #orphan"))
-    (define-key m (kbd "R") 'elpaca-ui-search-refresh)
-    (define-key m (kbd "T") (elpaca-defsearch tried "#unique #installed !#declared"))
-    (define-key m (kbd "U") 'elpaca-ui-unmark)
     (define-key m (kbd "b") 'elpaca-ui-browse-package)
     (define-key m (kbd "d") 'elpaca-ui-mark-delete)
     (define-key m (kbd "f") 'elpaca-ui-mark-fetch)
+    (define-key m (kbd "g") elpaca-ui-view-map)
     (define-key m (kbd "i") 'elpaca-ui-mark-try)
-    (define-key m (kbd "l") 'elpaca-log)
-    (define-key m (kbd "m") 'elpaca-manager)
+    (define-key m (kbd "m") 'elpaca-ui-mark-merge)
+    (define-key m (kbd "p") 'elpaca-ui-mark-pull)
     (define-key m (kbd "r") 'elpaca-ui-mark-rebuild)
     (define-key m (kbd "s") 'elpaca-ui-search)
-    (define-key m (kbd "t") 'elpaca-status)
-    (define-key m (kbd "u") 'elpaca-ui-mark-merge)
+    (define-key m (kbd "u") 'elpaca-ui-unmark)
     (define-key m (kbd "v") 'elpaca-ui-visit)
     (define-key m (kbd "x") 'elpaca-ui-execute-marks)
     m)
   "Keymap for `elpaca-ui-mode'.")
+
 (defvar-local elpaca-ui--want-faces t "When non-nil, faces are applied to packages.")
 (defvar-local elpaca-ui-search-query nil "Package search query.")
 (defvar-local elpaca-ui-header-line-prefix nil "Header line prefix.")
@@ -396,7 +398,7 @@ ID and COLS mandatory args to fulfill `tabulated-list-printer' API."
 
 (defun elpaca-ui--apply-face ()
   "Apply face to current entry id."
-  (when-let ((entry (get-text-property (point) 'tabulated-list-entry))
+  (when-let ((entry (tabulated-list-get-entry))
              (name  (aref entry 0))
              (id    (intern name))
              (offset (save-excursion
@@ -472,17 +474,34 @@ If QUERY is nil, the contents of the minibuffer are used instead."
   "Ensure current buffer is derived from `elpaca-ui-mode'."
   (or (derived-mode-p 'elpaca-ui-mode) (user-error "Buffer not in `elpaca-ui-mode'")))
 
+(defun elpaca-ui--tag-annotator (tag)
+  "Annotate TAG."
+  (when-let ((fn (alist-get tag elpaca-ui-search-tags nil nil #'string=))
+             (doc (documentation fn)))
+    (concat " " (substring doc 0 (string-search "\n" doc)))))
+
 (defvar elpaca-ui-search-prompt "Search (empty to clear): ")
+
+(defun elpaca-ui--complete-tag ()
+  "Return `elpaca-ui-search-tags' as completion candidates."
+  (and (looking-back "\\(?:#[[:alpha:]]*\\)" 0)
+       (list (save-excursion (re-search-backward "#") (1+ (point)))
+             (point)
+             (with-minibuffer-selected-window elpaca-ui-search-tags)
+             :annotation-function #'elpaca-ui--tag-annotator)))
+
 (defun elpaca-ui-search (&optional query)
   "Filter current buffer by QUERY. If QUERY is nil, prompt for it."
   (interactive
-   (progn (elpaca-ui--ensure-mode)
-          (list (string-trim
-                 (condition-case nil
-                     (read-from-minibuffer elpaca-ui-search-prompt
-                                           (and current-prefix-arg elpaca-ui-search-query)
-                                           nil nil elpaca-ui--history)
-                   (quit elpaca-ui-search-query))))))
+   (let ((completion-at-point-functions
+          (cons #'elpaca-ui--complete-tag completion-at-point-functions)))
+     (elpaca-ui--ensure-mode)
+     (list (string-trim
+            (condition-case nil
+                (read-from-minibuffer elpaca-ui-search-prompt
+                                      (and current-prefix-arg elpaca-ui-search-query)
+                                      nil nil elpaca-ui--history)
+              (quit elpaca-ui-search-query))))))
   (elpaca-ui--ensure-mode)
   (when (string-empty-p query) (setq query elpaca-ui-default-query))
   (unless (string= query elpaca-ui-search-query)
@@ -572,18 +591,21 @@ The current package is its sole argument."
                  ((error) (forward-line))))
              (deactivate-mark))))))
 
+;;@TODO: Most of these commands should not be allowed while building is in process
 (elpaca-ui-defmark elpaca-rebuild
   (lambda (p) (unless (or (elpaca-installed-p p) (alist-get p (elpaca--queued)))
                 (user-error "Package %S is not installed" p))))
 
+(defun elpaca-ui--ensure-installed (id)
+  "Throw user error if package associted with ID is not installed."
+  (unless (elpaca-installed-p id) (user-error "Package %S is not installed" id)))
+
+(elpaca-ui-defmark elpaca-fetch #'elpaca-ui--ensure-installed)
+(elpaca-ui-defmark elpaca-merge #'elpaca-ui--ensure-installed)
+(elpaca-ui-defmark elpaca-pull  #'elpaca-ui--ensure-installed)
+
 (elpaca-ui-defmark elpaca-try
   (lambda (p) (when (elpaca-installed-p p) (user-error "Package %S already installed" p))))
-
-(elpaca-ui-defmark elpaca-fetch
-  (lambda (p) (unless (elpaca-installed-p p) (user-error "Package %S is not installed" p))))
-
-(elpaca-ui-defmark elpaca-merge
-  (lambda (p) (unless (elpaca-installed-p p) (user-error "Package %S is not installed" p))))
 
 (elpaca-ui-defmark elpaca-delete
   (lambda (p) (unless (or (elpaca-installed-p p)

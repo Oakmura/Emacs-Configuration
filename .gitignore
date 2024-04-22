@@ -1,8 +1,12 @@
 # Directory
 Server/
+server/
 org-persist/
 url/
 
 # Files
 *~
 recentf
+
+# Folders
+images

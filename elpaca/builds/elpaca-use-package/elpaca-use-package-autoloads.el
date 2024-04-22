@@ -18,7 +18,7 @@ either customize it (see the info node `Easy Customization')
 or call the function `elpaca-use-package-mode'.")
 (custom-autoload 'elpaca-use-package-mode "elpaca-use-package" nil)
 (autoload 'elpaca-use-package-mode "elpaca-use-package" "\
-Minor mode to enable :elpaca support for `use-package'.
+Minor mode to enable Elpaca support for `use-package'.
 
 This is a global minor mode.  If called interactively, toggle the
 `Elpaca-Use-Package mode' mode.  If the prefix argument is
@@ -36,7 +36,7 @@ The mode's hook is called both when the mode is enabled and when
 it is disabled.
 
 (fn &optional ARG)" t)
-(register-definition-prefixes "elpaca-use-package" '("elpaca-use-package-" "use-package-"))
+(register-definition-prefixes "elpaca-use-package" '("elpaca-use-package--" "use-package-"))
 
 ;;; End of scraped data
 

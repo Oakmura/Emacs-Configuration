@@ -75,15 +75,15 @@ Return recursive list of packages which depend on queued E with ID.
 When MESSAGE is non-nil, message the list of dependents.
 
 (fn ID &optional MESSAGE)" t)
+(autoload 'elpaca-wait "elpaca" "\
+Block until currently queued orders are processed.
+When quit with \\[keyboard-quit], running sub-processes are not stopped.")
 (autoload 'elpaca "elpaca" "\
 Queue ORDER for installation/activation, defer execution of BODY.
 If ORDER is `nil`, defer BODY until orders have been processed.
 
 (fn ORDER &rest BODY)" nil t)
 (function-put 'elpaca 'lisp-indent-function 1)
-(autoload 'elpaca-wait "elpaca" "\
-Block until currently queued orders are processed.
-When quit with \\[keyboard-quit], running sub-processes are not stopped.")
 (autoload 'elpaca-try "elpaca" "\
 Try ORDER.
 Install the repo/build files on disk.
@@ -126,12 +126,21 @@ If FETCH is non-nil, download package changes before merging.
 If INTERACTIVE is non-nil, the queued order is processed immediately.
 
 (fn ID &optional FETCH INTERACTIVE)" t)
+(autoload 'elpaca-pull "elpaca" "\
+Fetch, merge, and rebuild package associated with ID.
+If INTERACTIVE is non-nil, process queues.
+
+(fn ID &optional INTERACTIVE)" t)
 (autoload 'elpaca-merge-all "elpaca" "\
 Merge and rebuild queued packages.
 If FETCH is non-nil fetch updates first.
 If INTERACTIVE is non-nil, process queues.
 
 (fn &optional FETCH INTERACTIVE)" t)
+(autoload 'elpaca-pull-all "elpaca" "\
+Update all queued packages. If INTERACTIVE is non-nil, process queue.
+
+(fn &optional INTERACTIVE)" t)
 (autoload 'elpaca-with-dir "elpaca" "\
 Evaluate BODY with E matching ID's `default-directory' bound.
 TYPE is either `repo` or `build`, for repo or build directory.
@@ -177,15 +186,13 @@ Return logging query if initial queues require building or order fails.")
 Display `elpaca-log-buffer' filtered by QUERY.
 
 (fn &optional QUERY)" t)
-(autoload 'elpaca-status "elpaca-log" "\
-Log most recent events for packages." t)
 (register-definition-prefixes "elpaca-log" '("elpaca-log-"))
 
 
 ;;; Generated autoloads from elpaca-manager.el
 
 (autoload 'elpaca-manager "elpaca-manager" "\
-Display elpaca's package management UI.
+Display Elpaca's package management UI.
 If RECACHE is non-nil, recompute menu items from `elpaca-menu-functions'.
 
 (fn &optional RECACHE)" t)
@@ -253,6 +260,8 @@ The following keys are recognized:
   :name description of the test
 
   :ref git ref to check out or `local' to use local copy in current repo state
+
+  :depth number of Elpaca repository commits to clone
 
   :dir `user-emacs-directory' name.
     Expanded in temporary filedirectory if it is a relative path or nil.

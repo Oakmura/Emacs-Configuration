@@ -1,6 +1,6 @@
 ;;; company.el --- Modular text completion framework  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2009-2023  Free Software Foundation, Inc.
+;; Copyright (C) 2009-2024  Free Software Foundation, Inc.
 
 ;; Author: Nikolaj Schumacher
 ;; Maintainer: Dmitry Gutov <dmitry@gutov.dev>
@@ -691,7 +691,9 @@ treated as if it was on this list."
 (defcustom company-continue-commands '(not save-buffer save-some-buffers
                                            save-buffers-kill-terminal
                                            save-buffers-kill-emacs
-                                           completion-at-point)
+                                           completion-at-point
+                                           complete-symbol
+                                           completion-help-at-point)
   "A list of commands that are allowed during completion.
 If this is t, or if `company-begin-commands' is t, any command is allowed.
 Otherwise, the value must be a list of symbols.  If it starts with `not',
@@ -1106,7 +1108,7 @@ Matching is limited to the current line."
 (defun company-grab-symbol ()
   "If point is at the end of a symbol, return it.
 Otherwise, if point is not inside a symbol, return an empty string."
-  (if (looking-at "\\_>")
+  (if (looking-at-p "\\_>")
       (buffer-substring (point) (save-excursion (skip-syntax-backward "w_")
                                                 (point)))
     (unless (and (char-after) (memq (char-syntax (char-after)) '(?w ?_)))
@@ -1115,7 +1117,7 @@ Otherwise, if point is not inside a symbol, return an empty string."
 (defun company-grab-word ()
   "If point is at the end of a word, return it.
 Otherwise, if point is not inside a symbol, return an empty string."
-  (if (looking-at "\\>")
+  (if (looking-at-p "\\>")
       (buffer-substring (point) (save-excursion (skip-syntax-backward "w")
                                                 (point)))
     (unless (and (char-after) (eq (char-syntax (char-after)) ?w))
@@ -1311,9 +1313,8 @@ be recomputed when this value changes."
            ((and prefix-len
                  (not (eq len t))
                  (equal str (company--prefix-str prefix))
-                 (or (null len)
-                     (eq prefix-len t)
-                     (> prefix-len len)))
+                 (or (eq prefix-len t)
+                     (> prefix-len (or len (length str)))))
             (setq len prefix-len))))))
     (if (and str len)
         (cons str len)
@@ -1990,7 +1991,7 @@ Keywords and function definition names are ignored."
             (cl-delete-if
              (lambda (candidate)
                (goto-char w-start)
-               (when (and (not (equal candidate ""))
+               (when (and (not (string-empty-p candidate))
                           (search-forward candidate w-end t)
                           ;; ^^^ optimize for large lists where most elements
                           ;; won't have a match.
@@ -2144,8 +2145,8 @@ For more details see `company-insertion-on-trigger' and
          (if (consp company-insertion-triggers)
              (memq (char-syntax (string-to-char input))
                    company-insertion-triggers)
-           (string-match (regexp-quote (substring input 0 1))
-                         company-insertion-triggers)))))
+           (string-match-p (regexp-quote (substring input 0 1))
+                           company-insertion-triggers)))))
 
 (defun company--incremental-p ()
   (and (> (point) company-point)
@@ -2186,7 +2187,11 @@ For more details see `company-insertion-on-trigger' and
       (if company-abort-manual-when-too-short
           ;; Must not be less than minimum or initial length.
           (min company-minimum-prefix-length
-               (length company--manual-prefix))
+               (if-let ((mp-len-override (cdr-safe company--manual-prefix)))
+                   (if (numberp mp-len-override)
+                       mp-len-override
+                     (length (car-safe company--manual-prefix)))
+                 (length company--manual-prefix)))
         0)
     company-minimum-prefix-length))
 
@@ -2501,9 +2506,9 @@ each one wraps a part of the input string."
 (defun company--search-update-predicate (ss)
   (let* ((re (funcall company-search-regexp-function ss))
          (company-candidates-predicate
-          (and (not (string= re ""))
+          (and (not (string-empty-p re))
                company-search-filtering
-               (lambda (candidate) (string-match re candidate))))
+               (lambda (candidate) (string-match-p re candidate))))
          (cc (company-calculate-candidates company-prefix
                                            (company-call-backend 'ignore-case))))
     (unless cc (user-error "No match"))
@@ -2519,7 +2524,7 @@ each one wraps a part of the input string."
 
 (defun company--search-assert-input ()
   (company--search-assert-enabled)
-  (when (string= company-search-string "")
+  (when (string-empty-p company-search-string)
     (user-error "Empty search string")))
 
 (defun company-search-repeat-forward ()
@@ -2572,7 +2577,7 @@ each one wraps a part of the input string."
 (defun company-search-delete-char ()
   (interactive)
   (company--search-assert-enabled)
-  (if (string= company-search-string "")
+  (if (string-empty-p company-search-string)
       (ding)
     (let ((ss (substring company-search-string 0 -1)))
       (when company-search-filtering
@@ -3006,6 +3011,7 @@ from the candidates list.")
         (orig-buf (window-buffer))
         (bis buffer-invisibility-spec)
         (inhibit-read-only t)
+        (inhibit-modification-hooks t)
         (dedicated (window-dedicated-p))
         (hscroll (window-hscroll))
         window-configuration-change-hook)
@@ -3421,7 +3427,7 @@ If SHOW-VERSION is non-nil, show the version in the echo area."
                                 nil line))
     (when (let ((re (funcall company-search-regexp-function
                              company-search-string)))
-            (and (not (string= re ""))
+            (and (not (string-empty-p re))
                  (string-match re value)))
       (pcase-dolist (`(,mbeg . ,mend) (company--search-chunks))
         (let ((beg (+ margin mbeg))
@@ -4105,7 +4111,7 @@ Delay is determined by `company-tooltip-idle-delay'."
                                (substring completion 1))))
 
     (and (equal pos (point))
-         (not (equal completion ""))
+         (not (string-empty-p completion))
          (add-text-properties 0 1 '(cursor 1) completion))
 
     (let* ((beg pos)
@@ -4292,7 +4298,7 @@ Delay is determined by `company-tooltip-idle-delay'."
               "}"))))
 
 (defun company-echo-hide ()
-  (unless (equal company-echo-last-msg "")
+  (unless (string-empty-p company-echo-last-msg)
     (setq company-echo-last-msg "")
     (company-echo-show)))
 

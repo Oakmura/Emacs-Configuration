@@ -42,6 +42,9 @@
 (declare-function pdf-view-goto-page "pdf-view")
 (declare-function pdf-view-previous-line-or-previous-page "pdf-view")
 (declare-function pdf-view-next-line-or-next-page "pdf-view")
+(declare-function pdf-view-assert-active-region "pdf-view")
+(declare-function pdf-view-active-region-text "pdf-view")
+(declare-function pdf-view-deactivate-region "pdf-view")
 (declare-function pdf-history-forward "pdf-history")
 (declare-function pdf-history-backward "pdf-history")
 
@@ -83,6 +86,29 @@ Consider COUNT."
 Consider COUNT."
   (interactive "P")
   (pdf-history-backward (or count 1)))
+
+(defun evil-collection-pdf-yank ()
+  "Save the text of the active region into the currently selected register."
+  (interactive)
+  (pdf-view-assert-active-region)
+  (let ((txt (pdf-view-active-region-text))
+        (reg evil-this-register))
+    (pdf-view-deactivate-region)
+    (evil-set-register
+     (or reg ?\")
+     (mapconcat #'identity txt nil))))
+
+(defun evil-collection-pdf-disable-visual-mode ()
+  "Don't enter visual-mode when the mark is activated.
+Rationale: pdf-view allows using the region to select text within the pdf,
+but evil-mode does not know how to do this. It selects entire pdf images
+instead, which is useless and counterintuitive."
+  (add-hook 'evil-local-mode-hook
+            (lambda () (remove-hook
+                        'activate-mark-hook
+                        'evil-visual-activate-hook
+                        t))
+            nil t))
 
 ;;;###autoload
 (defun evil-collection-pdf-setup ()
@@ -181,8 +207,10 @@ Consider COUNT."
     (evil-collection-define-key 'normal 'pdf-view-mode-map
       (kbd "C-u") 'pdf-view-scroll-down-or-previous-page))
 
-  (evil-collection-define-key 'visual 'pdf-view-mode-map
-    "y" 'pdf-view-kill-ring-save)
+  (add-hook 'pdf-view-mode-hook #'evil-collection-pdf-disable-visual-mode)
+
+  (evil-collection-define-key 'normal 'pdf-view-mode-map
+    "y" 'evil-collection-pdf-yank)
 
   (evil-collection-inhibit-insert-state 'pdf-history-minor-mode-map)
   (evil-set-initial-state 'pdf-history-minor-mode 'normal)

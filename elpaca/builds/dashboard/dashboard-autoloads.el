@@ -20,7 +20,7 @@ Setup post initialization hooks unless a command line argument is provided.")
 
 ;;; Generated autoloads from dashboard-widgets.el
 
-(register-definition-prefixes "dashboard-widgets" '("dashboard-" "org-time-less-p" "recentf-list"))
+(register-definition-prefixes "dashboard-widgets" '("dashboard-" "recentf-list"))
 
 ;;; End of scraped data
 
