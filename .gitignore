@@ -10,3 +10,12 @@ recentf
 
 # Folders
 images
+
+# Installed
+minimal-emacs/tldr*
+minimal-emacs/elpa*
+
+# History
+minimal-emacs/smex-items
+minimal-emacs/transient/history.el
+minimal-emacs/eshell*
